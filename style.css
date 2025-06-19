@@ -1,68 +1,56 @@
 @import url('https://fonts.cdnfonts.com/css/minecraftia');
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Bungee+Inline&display=swap');
 
 body {
     margin: 0;
     padding: 0;
-    overflow: hidden;
     min-height: 100vh;
-    font-family: 'Orbitron', 'Bungee Inline', Arial, sans-serif;
-    background: linear-gradient(120deg, #3a453a 0%, #5d5e57 60%, #b9c2b4 100%);
-    position: relative;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #a9cbe8;
+    overflow: hidden;
 }
 
-body::before, body::after {
-    content: "";
-    position: fixed;
-    z-index: 0;
-    top: 0; left: 0; width: 100vw; height: 100vh;
-    background: url('https://svgshare.com/i/14B6.svg') repeat-x;
-    opacity: 0.13;
-    animation: cloudmove 80s linear infinite;
-}
-body::after {
-    background: url('https://svgshare.com/i/14Gq.svg') repeat-x;
-    opacity: 0.08;
-    top: 30vh;
-    animation-duration: 120s;
-}
-@keyframes cloudmove {
-    0% { background-position: 0 0;}
-    100% { background-position: 600vw 0;}
+/* Alto's Adventure Day/Night BG - filled in by JS on canvas */
+canvas#pongCanvas {
+    display: block;
+    margin: 0 auto;
+    position: absolute;
+    top: 0; left: 0;
+    z-index: 3;
+    background: transparent;
+    border: none;
+    width: 100vw;
+    height: 100vh;
 }
 
 .minecraft-title {
-    font-family: 'Minecraftia', 'Bungee Inline', 'Orbitron', Arial, sans-serif !important;
+    font-family: 'Minecraftia', Arial, sans-serif !important;
     font-size: 3.2em;
-    color: #18ff44;
-    text-shadow:
-        3px 3px 0 #000,
-        -3px 3px 0 #000,
-        3px -3px 0 #000,
-        -3px -3px 0 #000,
-        0 6px 24px #18ff44aa;
+    color: #234564;
+    text-shadow: 2px 2px 0 #fff, 1px 1px 12px #82acd0aa;
     letter-spacing: 6px;
     margin: 0;
     padding: 36px 0 18px 0;
     text-align: center;
+    z-index: 10;
+    position: relative;
+    user-select: none;
 }
 
 #scoreboard {
     position: absolute;
     left: 50%;
-    top: 36px;
+    top: 30px;
     transform: translateX(-50%);
-    background: linear-gradient(120deg, #c0c8b8 65%, #646457 100%);
-    border-radius: 15px 25px 25px 15px / 25px 15px 15px 25px;
-    border: 3px solid #424b3e;
-    box-shadow: 0 0 16px #505b3e99, 0 4px 32px #000b;
-    padding: 12px 44px 10px 44px;
+    background: rgba(255,255,255,0.22);
+    border-radius: 16px;
+    box-shadow: 0 2px 8px #23456422;
+    padding: 13px 44px 10px 44px;
     display: flex;
     align-items: center;
     gap: 52px;
     z-index: 5;
     font-size: 2.1em;
-    font-family: 'Minecraftia', 'Orbitron', 'Bungee Inline', Arial, sans-serif;
+    font-family: 'Minecraftia', Arial, sans-serif;
     font-weight: bold;
     letter-spacing: 2px;
     text-shadow: 1px 2px 0 #fffbe777, 0 0 6px #283e2a;
@@ -72,67 +60,59 @@ body::after {
     display: flex;
     align-items: center;
     gap: 8px;
-    filter: drop-shadow(0 0 6px #0007);
 }
 .score-player .icon {
     font-size: 1.45em;
-    border-radius: 8px;
-    padding: 3px 10px;
-    background: #3e4d39;
-    color: #f5f394;
+    border-radius: 6px;
+    background: #e4eff8;
+    color: #4a6b8d;
     margin-right: 6px;
-    border: 2px solid #b39e56;
-    box-shadow: 0 2px 8px #0006;
+    box-shadow: 0 2px 8px #0003;
+    padding: 2px 7px;
+}
+
+#menu {
+    margin: 64px 0 40px 0;
+    z-index: 10;
+    position: relative;
+    display: flex;
+    justify-content: center;
+    gap: 38px;
 }
 
 #menu button, #winner button {
-    font-size: 23px;
-    padding: 14px 50px;
-    margin: 0 26px;
-    background: linear-gradient(90deg, #6e7e59 0%, #b5b07a 100%);
-    border: 3px solid #444e36;
-    border-radius: 20px;
-    color: #1d270e;
+    font-size: 22px;
+    padding: 13px 46px;
+    margin: 0 16px;
+    background: linear-gradient(90deg, #e9f4fa 0%, #b4d0e7 100%);
+    border: 2px solid #8cbad8;
+    border-radius: 17px;
+    color: #234564;
     font-family: 'Minecraftia', Arial, sans-serif;
     font-weight: 700;
     letter-spacing: 1.5px;
     cursor: pointer;
-    box-shadow: 0 2px 12px #3e4d3988;
+    box-shadow: 0 2px 8px #9dbece44;
     transition: background 0.15s, transform 0.12s, box-shadow 0.18s;
-    text-shadow: 1px 1px 4px #fffbe7cc, 0 1px 0 #3e4d39;
     outline: none;
-    position: relative;
 }
 #menu button:hover, #winner button:hover {
-    background: linear-gradient(90deg, #a4974c 0%, #b5b07a 80%);
-    color: #34441f;
+    background: linear-gradient(90deg, #b4d0e7 0%, #e9f4fa 100%);
+    color: #345;
     transform: translateY(-2px) scale(1.03);
-    box-shadow: 0 4px 24px #908b6399;
-}
-
-#pongCanvas {
-    background: linear-gradient(120deg, #4e5946 0%, #2e3231 100%);
-    display: block;
-    margin: 0 auto;
-    border: 7px solid #a4974c;
-    border-radius: 30px 38px 38px 30px;
-    box-shadow: 0 0 60px #b5b07a88, 0 0 0 #000a;
-    position: absolute;
-    top: 0; left: 0;
-    z-index: 1;
-    transition: box-shadow 0.7s;
+    box-shadow: 0 4px 18px #afcbe889;
 }
 
 #winner {
-    background: linear-gradient(120deg, #f8f7e2 80%, #b5b07a 100%);
-    box-shadow: 0 0 54px #b5b07a, 0 2px 32px #0009;
+    background: rgba(240,244,255, 0.98);
+    box-shadow: 0 0 54px #b5b07a, 0 2px 32px #0006;
     border-radius: 35px;
-    border: 4px solid #a4974c;
-    padding: 52px 90px 32px 90px;
-    font-size: 2.2em;
+    border: 3px solid #b7d7e7;
+    padding: 44px 70px 32px 70px;
+    font-size: 2.0em;
     font-family: 'Minecraftia', Arial, sans-serif;
     font-weight: bold;
-    color: #4e5946;
+    color: #3c4d5c;
     position: fixed;
     left: 50%; top: 50%;
     transform: translate(-50%,-50%) scale(1);
@@ -151,90 +131,27 @@ body::after {
     margin-bottom: 24px;
     font-size: 1.2em;
     letter-spacing: 1px;
-    color: #af9300;
-    text-shadow: 0 2px 18px #b5b07a77;
-    font-family: 'Minecraftia', Arial, sans-serif;
-}
-
-#planetPopup {
-    position: fixed;
-    top: 52%;
-    left: 50%;
-    z-index: 30;
-    transform: translate(-50%,-50%);
-    background: linear-gradient(120deg, #e6cf7c 65%, #b5b07a 100%);
-    border: 4px solid #a4974c;
-    border-radius: 42px;
-    padding: 46px 56px 34px 56px;
-    box-shadow: 0 0 80px #b5b07a, 0 0 30px #444b38;
-    text-align: center;
-    animation: popup-planet 2s cubic-bezier(.43,2,.27,.92);
-    min-width: 210px;
-    backdrop-filter: blur(7px);
-    overflow: visible;
-}
-@keyframes popup-planet {
-    0% {transform: translate(-50%,-50%) scale(0.7);}
-    70% {transform: translate(-50%,-50%) scale(1.12);}
-    100% {transform: translate(-50%,-50%) scale(1);}
-}
-#planetGraphic {
-    font-size: 100px;
-    margin-bottom: 10px;
-    animation: planet-spin 2s linear infinite;
-    display: inline-block;
-    filter: drop-shadow(0 0 18px #b5b07a);
-    border-radius: 50%;
-    border: 7px solid #fffbe799;
-    padding: 8px;
-    background: rgba(249,236,153,0.11);
-    box-shadow: 0 0 40px #b5b07a77;
-}
-@keyframes planet-spin {
-    0% { transform: rotate(0deg);}
-    100% { transform: rotate(360deg);}
-}
-#planetLabel {
-    font-size: 1.7em;
-    margin-bottom: 2px;
-    color: #4e5946;
-    text-shadow: 0 2px 10px #e6cf7c;
-    font-family: 'Minecraftia', 'Bungee Inline', 'Orbitron', Arial, sans-serif;
-}
-#gravityLabel {
-    font-size: 1.2em;
-    color: #a4974c;
-    text-shadow: 0 0 8px #e6cf7c;
-    font-family: 'Orbitron', Arial, sans-serif;
+    color: #5991c7;
 }
 
 #spinningIndicator {
     position: absolute;
     top: 10px;
     right: 2vw;
-    font-size: 1.4em;
-    color: #fffbe7;
-    background: #a4974c;
-    padding: 14px 36px;
-    border-radius: 22px;
-    box-shadow: 0 0 22px #b5b07a, 0 2px 8px #0007;
-    animation: spin-glow 1s infinite alternate;
+    font-size: 1.1em;
+    color: #fff;
+    background: #81b1d3cc;
+    padding: 10px 22px;
+    border-radius: 20px;
+    box-shadow: 0 0 16px #b5b07a, 0 2px 8px #0003;
+    animation: spin-glow 1.5s infinite alternate;
     z-index: 40;
-    font-weight: 900;
+    font-weight: 600;
     letter-spacing: 2px;
-    border: 2.5px solid #4e5946;
+    border: 2.5px solid #3c4d5c;
     font-family: 'Minecraftia', Arial, sans-serif;
 }
 @keyframes spin-glow {
-    0% { box-shadow: 0 0 9px #b5b07a;}
-    100% { box-shadow: 0 0 32px #a4974c;}
-}
-
-#menu {
-    margin: 64px 0 52px 0;
-    z-index: 10;
-    position: relative;
-    display: flex;
-    justify-content: center;
-    gap: 38px;
+    0% { box-shadow: 0 0 8px #b5b07a;}
+    100% { box-shadow: 0 0 28px #b5b07a;}
 }
