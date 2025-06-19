@@ -50,9 +50,7 @@ let running = false, mousePos = {x:0, y:0};
 let keys = {};
 let lastTime = null;
 
-// "lastPaddleHit" system for dynamic, realistic bounce
-let lastPaddleHit = null;
-let lastBounceTime = 0;
+let lastPaddleBounce = null;
 
 // === RESPONSIVE BOARD ===
 function setBoardSize() {
@@ -77,8 +75,7 @@ function resetGameVars() {
     gravityVec = {x:0, y:0};
     gravityTimeout = null; spinTimeout = null; planet = null;
     lastSpinStart = 0;
-    lastPaddleHit = null;
-    lastBounceTime = 0;
+    lastPaddleBounce = null;
     resetBall(Math.random()>0.5?1:-1);
 }
 
@@ -120,7 +117,6 @@ restartBtn.onclick = () => {
 aiBtn.onclick = () => startGame('ai');
 pvpBtn.onclick = () => startGame('pvp');
 
-// === DRAWING ===
 function drawPaddle(p, leftSide) {
     ctx.save();
     ctx.translate(p.x + PADDLE_W/2, p.y + PADDLE_H/2);
@@ -259,7 +255,6 @@ function draw() {
     ctx.restore();
 }
 
-// === GAME LOGIC ===
 function resetBall(dir) {
     ball = {
         x: BOARD_W/2,
@@ -269,8 +264,7 @@ function resetBall(dir) {
         stuck: false,
         stuckTimer: 0
     };
-    lastPaddleHit = null;
-    lastBounceTime = 0;
+    lastPaddleBounce = null;
 }
 
 function updatePaddles(dt) {
@@ -317,7 +311,7 @@ function clamp(val, min, max) {
     return Math.max(min, Math.min(max, val));
 }
 
-// --- Dynamic, realistic bounce: paddle hit detection ---
+// Paddle collision check with separation logic to prevent sticking and dynamic velocity
 function checkPaddleHit(p, leftSide) {
     let px = ball.x - (p.x + PADDLE_W/2);
     let py = ball.y - (p.y + PADDLE_H/2);
@@ -344,7 +338,6 @@ function checkPaddleHit(p, leftSide) {
 }
 
 function dynamicPaddleBounce(p, leftSide) {
-    // Use paddle velocity and hit position to give dynamic effect
     let px = ball.x - (p.x + PADDLE_W/2);
     let py = ball.y - (p.y + PADDLE_H/2);
     let normalAngle = Math.atan2(py, px);
@@ -367,33 +360,35 @@ function dynamicPaddleBounce(p, leftSide) {
     let n = { x: Math.cos(normalAngle), y: Math.sin(normalAngle) };
     let dot = v.x*n.x + v.y*n.y;
 
-    // Add paddle velocity to reflection for "dynamic" effect
+    // Dynamic effect: true paddle velocity, so use frame-to-frame (pixels/frame)
     let pvx = p.vx || 0, pvy = p.vy || 0;
-    // If paddle is moving into the ball, give extra speed
     let paddleImpact = pvx * n.x + pvy * n.y;
-    let reflectFactor = 1.09 + Math.max(0, paddleImpact * 0.15); // dynamic, up to +~30%
 
-    ball.vx = reflectFactor * (v.x - 2*dot*n.x) + 0.55*pvx;
-    ball.vy = reflectFactor * (v.y - 2*dot*n.y) + 0.55*pvy;
+    // The intensity is now closely tied to the actual paddle movement toward the ball
+    let baseReflect = 1.12 + Math.max(0, paddleImpact * 0.23); // Stronger impact for higher paddle speed
+    ball.vx = baseReflect * (v.x - 2*dot*n.x) + 0.7*pvx;
+    ball.vy = baseReflect * (v.y - 2*dot*n.y) + 0.7*pvy;
 
-    // Add some randomness/spin
-    ball.vy += (Math.random()-0.5)*2;
+    // Add some randomness/spin for realism
+    ball.vy += (Math.random()-0.5)*2.5;
 
-    // Clamp speed, but always a bit above min
+    // Clamp speed, but allow higher speeds (for realism)
     let speed = Math.sqrt(ball.vx*ball.vx + ball.vy*ball.vy);
-    let minSpeed = 7, maxSpeed = 18;
+    let minSpeed = 7, maxSpeed = 28;
     speed = Math.max(Math.min(speed, maxSpeed), minSpeed);
     let theta = Math.atan2(ball.vy, ball.vx);
     ball.vx = speed * Math.cos(theta);
     ball.vy = speed * Math.sin(theta);
 
-    // Make sure it's away from paddle
-    if ((leftSide && ball.vx < 0) || (!leftSide && ball.vx > 0))
-        ball.vx *= -1;
+    // Always away from paddle
+    if ((leftSide && ball.vx < 0) || (!leftSide && ball.vx > 0)) ball.vx *= -1;
 
-    // Record hit
-    lastPaddleHit = leftSide ? "left" : "right";
-    lastBounceTime = performance.now();
+    // Move ball out of paddle surface to prevent sticking visually
+    let pushDist = 4;
+    ball.x += Math.cos(normalAngle) * pushDist * (leftSide ? 1 : -1);
+    ball.y += Math.sin(normalAngle) * pushDist * (leftSide ? 1 : -1);
+
+    lastPaddleBounce = leftSide ? "left" : "right";
 }
 
 function checkBlockHit(ob) {
@@ -449,7 +444,7 @@ function triggerGravitySpin() {
     planet = EXOPLANETS[Math.floor(Math.random()*EXOPLANETS.length)];
     gravity = planet.gravity;
     spinDir = Math.random()<0.5 ? 1 : -1;
-    spinSpeed = 0.75 * spinDir; // 0.75 rad/s
+    spinSpeed = 0.75 * spinDir;
     spinning = true;
     spinAngle = 0;
     gravityVec = {x: Math.sin(spinAngle), y: Math.cos(spinAngle)};
@@ -539,29 +534,21 @@ function gameLoop(ts) {
         ball.vy *= -1;
     }
 
-    // --- Dynamic sticky bug fix: Only bounce once per approach, but allow re-bounce if ball is moving away and returns
-    let timeNow = performance.now();
+    // Dynamic bounce and anti-sticking: only bounce if moving toward paddle, and always move ball out after a bounce
     if (checkPaddleHit(player1,true)) {
-        // If last hit was not left, or ball is moving away, allow new bounce
-        if (lastPaddleHit !== "left" || (ball.vx < 0 && ball.x > player1.x+PADDLE_W+BALL_RADIUS+5)) {
-            if (ball.vx < 0) { // Only bounce if moving toward paddle
-                ball.x = player1.x+PADDLE_W+BALL_RADIUS;
-                dynamicPaddleBounce(player1, true);
-            }
+        if (ball.vx < 0 && lastPaddleBounce !== "left") {
+            dynamicPaddleBounce(player1, true);
         }
-    } else if (lastPaddleHit === "left" && (timeNow - lastBounceTime > 70)) {
-        lastPaddleHit = null;
+    } else if (lastPaddleBounce === "left") {
+        lastPaddleBounce = null;
     }
 
     if (checkPaddleHit(player2,false)) {
-        if (lastPaddleHit !== "right" || (ball.vx > 0 && ball.x < player2.x-BALL_RADIUS-5)) {
-            if (ball.vx > 0) {
-                ball.x = player2.x-BALL_RADIUS;
-                dynamicPaddleBounce(player2, false);
-            }
+        if (ball.vx > 0 && lastPaddleBounce !== "right") {
+            dynamicPaddleBounce(player2, false);
         }
-    } else if (lastPaddleHit === "right" && (timeNow - lastBounceTime > 70)) {
-        lastPaddleHit = null;
+    } else if (lastPaddleBounce === "right") {
+        lastPaddleBounce = null;
     }
 
     for (const ob of obstacles) {
