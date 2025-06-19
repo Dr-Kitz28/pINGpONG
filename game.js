@@ -1,7 +1,7 @@
-// Minimal Alto's Adventure pINGpONG with swept collision for fast paddle/ball movement (NO blocks or planets)
+// Alto's Adventure pINGpONG: Sun rising between mountains, birds & wind, swept paddle collision & responsive input
+
 const WIN_SCORE = 10;
-const PADDLE_W = 18, PADDLE_H = 120;
-const BALL_RADIUS = 13;
+const PADDLE_W = 18, PADDLE_H = 120, BALL_RADIUS = 13;
 let BOARD_W, BOARD_H, PLAYER_X_RANGE, AI_X_RANGE, Y_RANGE;
 const canvas = document.getElementById('pongCanvas');
 const ctx = canvas.getContext('2d');
@@ -24,6 +24,11 @@ let lastTime = null;
 let lastPaddleBounce = null;
 let dayNightProgress = 0;
 
+// Birds and wind
+let birds = [];
+let winds = [];
+
+// --- Responsive ---
 function setBoardSize() {
     BOARD_W = window.innerWidth;
     BOARD_H = window.innerHeight;
@@ -41,6 +46,8 @@ function resetGameVars() {
     player2 = {x: AI_X_RANGE[1]-12, y: BOARD_H/2-PADDLE_H/2, color: "#ffd47d", lastX: 0, lastY: 0, vx: 0, vy: 0};
     player1Score = 0; player2Score = 0;
     lastPaddleBounce = null;
+    spawnBirds();
+    spawnWinds();
     resetBall(Math.random()>0.5?1:-1);
 }
 
@@ -78,7 +85,7 @@ restartBtn.onclick = () => {
 aiBtn.onclick = () => startGame('ai');
 pvpBtn.onclick = () => startGame('pvp');
 
-// === Alto's background ===
+// --- Alto's background ---
 function lerpColor(a, b, t) {
     return [
         Math.round(a[0] + (b[0] - a[0]) * t),
@@ -94,6 +101,21 @@ const SKIES = [
 ];
 const SUN_COLOR = [255,220,120];
 const MOON_COLOR = [230,230,255];
+
+// --- Mountain profile for sun and birds ---
+function getMountainProfilePoints(yBase, yPeak, n, offset=0, width=BOARD_W) {
+    // Returns array of x/y for n points, highest at center, used for sun placement & bird spawn
+    let pts = [];
+    for (let i=0; i<=n; ++i) {
+        let t = i/n, x = offset + width*t;
+        // Peaks in center, valleys at sides
+        let y = yBase - Math.pow(Math.sin(Math.PI*t), 2.3)*(yBase-yPeak)*1.18
+            + Math.sin(offset*2+t*7)*16 + Math.cos(offset*3+t*11)*10; // add bumps
+        pts.push({x, y});
+    }
+    return pts;
+}
+
 function drawAltoBackground(progress) {
     let p = (progress % 1 + 1) % 1, k = Math.floor(p * 4), t = (p * 4) % 1;
     let top = lerpColor(SKIES[0][k], SKIES[0][(k+1)%4], t),
@@ -104,58 +126,182 @@ function drawAltoBackground(progress) {
     grad.addColorStop(0.6, rgb(mid));
     grad.addColorStop(1, rgb(bot));
     ctx.fillStyle = grad; ctx.fillRect(0, 0, BOARD_W, BOARD_H);
-    drawMountains(BOARD_H, 0.18, 0.15, 32, [80, 105, 142], 0.9, progress*0.5, 1.0);
-    drawMountains(BOARD_H, 0.32, 0.22, 36, [65, 79, 101], 0.92, progress, 0.5);
-    drawMountains(BOARD_H, 0.45, 0.33, 40, [39, 52, 77], 0.88, progress*1.5, 0.25);
 
-    // Sun/moon
-    let sunMoonT = (progress + 0.04) % 1;
-    let theta = Math.PI * (1 - sunMoonT);
-    let cx = BOARD_W/2 + Math.cos(theta)*BOARD_W*0.36;
-    let cy = BOARD_H*0.21 - Math.sin(theta)*BOARD_H*0.18;
-    let isNight = (k === 3 || (k === 0 && t < 0.2));
-    ctx.save();
-    ctx.globalAlpha = 0.80;
-    ctx.beginPath();
-    ctx.arc(cx, cy, isNight ? 40 : 63, 0, Math.PI*2);
-    ctx.fillStyle = isNight ? rgb(MOON_COLOR) : rgb(SUN_COLOR);
-    ctx.shadowColor = isNight ? "#ccd7ff77" : "#ffeab077";
-    ctx.shadowBlur = isNight ? 26 : 48;
-    ctx.fill();
-    ctx.restore();
-    if (isNight) drawStars(ctx, BOARD_W, BOARD_H, 0.14);
+    // Parallax mountain layers, foreground last
+    drawMountains(BOARD_H, 0.23, 0.19, 32, [80, 105, 142], 0.7, progress*0.5, 1.0);
+    drawMountains(BOARD_H, 0.36, 0.28, 36, [65, 79, 101], 0.86, progress, 0.5);
+
+    // Foreground mountain for sun/bird occlusion
+    drawMountains(BOARD_H, 0.53, 0.36, 55, [39, 52, 77], 0.99, progress*1.5, 0.23, true, progress);
+
+    // Sun/Moon - low, between peaks
+    drawSunMoonBetweenMountains(progress);
+    drawWinds();
+    drawBirds();
 }
-function drawStars(ctx, w, h, alpha=1) {
-    ctx.save();
-    ctx.globalAlpha = 0.19*alpha;
-    for (let i=0; i<60; ++i) {
-        let sx = Math.random()*w, sy = Math.random()*h*0.7, r = Math.random()*1.4+0.5;
-        ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI*2);
-        ctx.fillStyle = "#fff";
-        ctx.fill();
-    }
-    ctx.restore();
-}
-function drawMountains(h, topFrac, baseFrac, detail, color, alpha, xshift, parallax) {
+
+function drawMountains(h, topFrac, baseFrac, detail, color, alpha, xshift, parallax, occlusionLayer=false, progress=0) {
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.beginPath();
     let y0 = h*topFrac, y1 = h*baseFrac, w = BOARD_W;
     ctx.moveTo(0, h);
+    // For occlusion layer, keep points for sun/bird masking
+    let mtPts = [];
     for (let i = 0; i <= detail; ++i) {
         let t = i / detail, px = t*w;
         let base = y0 + (y1-y0)*Math.pow(Math.sin(Math.PI*t), 3);
         let noise =
             Math.sin(xshift*5 + i*0.6 + Math.cos(xshift*2+t*6)*1.2) * 12 +
             Math.sin(xshift*2.2 + i*1.5) * 18 * (0.5-Math.abs(t-0.5));
-        ctx.lineTo(px, base + noise*parallax);
+        let py = base + noise*parallax;
+        ctx.lineTo(px, py);
+        if (occlusionLayer) mtPts.push({x: px, y: py});
     }
     ctx.lineTo(w, h); ctx.closePath();
     ctx.fillStyle = rgb(color);
     ctx.fill(); ctx.restore();
+
+    // Store mountain profile for sun/bird masking if needed
+    if (occlusionLayer) {
+        window.__alto_mountain_profile = mtPts;
+        window.__alto_mountain_progress = progress;
+    }
 }
 
-// === DRAWING ===
+function drawSunMoonBetweenMountains(progress) {
+    // Sun/Moon rises from behind mountain, center
+    if (!window.__alto_mountain_profile) return;
+    let mountain = window.__alto_mountain_profile;
+    let n = mountain.length;
+    let sunT = 1 - Math.abs((progress*2)%2-1); // 0 (night), 1 (high noon), back to 0
+    // X is always center
+    let sunX = BOARD_W/2;
+    // Find nearest mountain points to center for Y
+    let closest = mountain.slice().sort((a,b)=>Math.abs(a.x-sunX)-Math.abs(b.x-sunX))[0];
+    let minY = closest.y;
+    let maxY = BOARD_H*0.14;
+    let sunY = minY - (minY-maxY)*Math.pow(sunT,1.6); // rises up, then sets
+    // Sun/Moon color and alpha
+    let isNight = progress < 0.15 || progress > 0.85;
+    let sunColor = isNight ? MOON_COLOR : SUN_COLOR;
+    let sunAlpha = isNight ? 0.89 : 0.95;
+    ctx.save();
+    ctx.globalAlpha = sunAlpha;
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, isNight ? 36 : 55, 0, Math.PI*2);
+    ctx.fillStyle = rgb(sunColor);
+    ctx.shadowColor = isNight ? "#ccd7ff77" : "#ffeab077";
+    ctx.shadowBlur = isNight ? 20 : 38;
+    ctx.fill();
+    ctx.restore();
+}
+
+// --- Birds ---
+function spawnBirds() {
+    birds = [];
+    let flocks = Math.round(2+Math.random()*2);
+    for (let f=0; f<flocks; ++f) {
+        let n = 6 + Math.floor(Math.random()*6);
+        let t0 = Math.random()*0.7+0.1; // start progress
+        let leftToRight = Math.random() > 0.5;
+        let baseY = BOARD_H*0.28 + Math.random()*BOARD_H*0.16;
+        let arcHeight = 60+Math.random()*60;
+        let speed = (0.12+Math.random()*0.15)*(leftToRight?1:-1);
+        for (let i=0; i<n; ++i) {
+            birds.push({
+                t: t0-i*0.04,
+                arcY: baseY+Math.random()*9,
+                arcHeight: arcHeight+Math.random()*13,
+                speed,
+                leftToRight,
+                offset: Math.random()*Math.PI*2,
+                spread: 14+Math.random()*10,
+                size: 13+Math.random()*6,
+                alpha: 0.15+Math.random()*0.20
+            });
+        }
+    }
+}
+
+function drawBirds() {
+    if (!birds.length) return;
+    let mtn = window.__alto_mountain_profile || [];
+    for (let b of birds) {
+        b.t += b.speed/120;
+        if (b.t > 1.2) b.t = -0.2;
+        if (b.t < -0.2) b.t = 1.2;
+        // Path: low arc, center region
+        let px = BOARD_W*(b.leftToRight?b.t:1-b.t);
+        let py = b.arcY - Math.sin(b.t*Math.PI)*b.arcHeight;
+        // Bird shadowy color
+        ctx.save();
+        ctx.globalAlpha = b.alpha;
+        ctx.translate(px, py);
+        ctx.scale(b.leftToRight?1:-1,1);
+        // Bird: V shape with arched wings
+        ctx.beginPath();
+        ctx.moveTo(0,0);
+        ctx.lineTo(-b.size*0.7, b.size*0.33);
+        ctx.moveTo(0,0);
+        ctx.lineTo(b.size*0.7, b.size*0.33);
+        ctx.lineWidth = 2.6;
+        ctx.strokeStyle = "#16151a";
+        ctx.shadowColor = "#000";
+        ctx.shadowBlur = 2;
+        ctx.stroke();
+        ctx.restore();
+    }
+}
+
+// --- Wind ---
+function spawnWinds() {
+    winds = [];
+    let n = 4 + Math.floor(Math.random()*2);
+    for (let i=0;i<n;++i) {
+        winds.push({
+            t: Math.random(),
+            y: BOARD_H*0.2 + Math.random()*BOARD_H*0.4,
+            speed: 0.10+Math.random()*0.06,
+            amp: 25+Math.random()*22,
+            len: BOARD_W*0.42+Math.random()*BOARD_W*0.26,
+            offset: Math.random()*Math.PI*2,
+            alpha: 0.09+Math.random()*0.09
+        });
+    }
+}
+function drawWinds() {
+    for (let w of winds) {
+        w.t += w.speed/600;
+        if (w.t > 1) w.t = -0.1;
+        let x0 = -w.len + w.t*(BOARD_W+w.len*2);
+        ctx.save();
+        ctx.globalAlpha = w.alpha;
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        for (let i=0;i<=40;++i) {
+            let t = i/40;
+            let x = x0 + t*w.len;
+            let y = w.y + Math.sin(w.offset+t*3.5+performance.now()/2300)*w.amp*Math.sin(Math.PI*t);
+            if (i===0) ctx.moveTo(x,y);
+            else ctx.lineTo(x,y);
+        }
+        ctx.stroke();
+        ctx.restore();
+    }
+}
+
+// --- Drawing ---
+function draw() {
+    drawAltoBackground(dayNightProgress);
+    drawCenterLine();
+    drawPaddle(player1);
+    drawPaddle(player2);
+    drawBall();
+    drawScore();
+}
+
 function drawPaddle(p) {
     ctx.save();
     ctx.beginPath();
@@ -215,15 +361,7 @@ function drawScore(){
     score2El.textContent = player2Score;
 }
 
-function draw() {
-    drawAltoBackground(dayNightProgress);
-    drawCenterLine();
-    drawPaddle(player1);
-    drawPaddle(player2);
-    drawBall();
-    drawScore();
-}
-
+// --- Pong logic ---
 function resetBall(dir) {
     ball = {
         x: BOARD_W/2,
@@ -249,7 +387,7 @@ function updatePaddles(dt) {
         player2.lastX = player2.x;
         player2.lastY = player2.y;
     }
-    const paddleSpeed = 4.2;
+    const paddleSpeed = 6.4;
     if (mode==='ai') {
         player1.x = clamp(mousePos.x, PLAYER_X_RANGE[0], PLAYER_X_RANGE[1]);
         player1.y = clamp(mousePos.y, Y_RANGE[0], Y_RANGE[1]);
