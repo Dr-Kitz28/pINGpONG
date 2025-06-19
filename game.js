@@ -108,19 +108,21 @@ pvpBtn.onclick = () => startGame('pvp');
 function drawPaddle(p, leftSide) {
     ctx.save();
     ctx.translate(p.x + PADDLE_W/2, p.y + PADDLE_H/2);
-    let startAng, endAng;
-    // Both paddles are arcs of 180deg facing center
+    let r = 74;
+    let startAng, endAng, ccw;
     if (leftSide) {
-        // Left: arc from 225deg to 315deg, concave faces right
-        startAng = (5*Math.PI/4);
-        endAng = (7*Math.PI/4);
+        // Left paddle: arc from 225° to 135°, concave faces right (center line), draw counterclockwise
+        startAng = (5 * Math.PI) / 4; // 225°
+        endAng = (3 * Math.PI) / 4;   // 135°
+        ccw = true;
     } else {
-        // Right: arc from -45deg to 45deg, concave faces left
-        startAng = (-Math.PI/4);
-        endAng = (Math.PI/4);
+        // Right paddle: arc from -45° to 45°, concave faces left (center line), draw clockwise
+        startAng = -Math.PI / 4;      // -45°
+        endAng = Math.PI / 4;         // 45°
+        ccw = false;
     }
     ctx.beginPath();
-    ctx.arc(0, 0, 74, startAng, endAng, false);
+    ctx.arc(0, 0, r, startAng, endAng, ccw);
     ctx.lineWidth = PADDLE_W;
     ctx.strokeStyle = p.color;
     ctx.shadowColor = p.color;
@@ -286,18 +288,26 @@ function checkPaddleHit(p, leftSide) {
     let r = 74;
     let dist = Math.sqrt(px*px+py*py);
     let angle = Math.atan2(py, px);
-    // Left paddle: arc from 225deg to 315deg
-    // Right paddle: arc from -45deg to 45deg
+    // Left paddle: arc from 225deg to 135deg (ccw)
+    // Right paddle: arc from -45deg to 45deg (cw)
     if (leftSide) {
-        if (
-            dist > r-BALL_RADIUS-PADDLE_W/2 && dist < r+BALL_RADIUS+PADDLE_W/2 &&
-            angle >= 5*Math.PI/4 && angle <= 7*Math.PI/4
-        ) return true;
+        // Normalize angle to [0, 2pi]
+        if (angle < 0) angle += Math.PI*2;
+        let startA = (5*Math.PI)/4, endA = (3*Math.PI)/4;
+        if (startA < endA) {
+            // Wrapped around 2pi
+            if (angle >= startA || angle <= endA) {
+                if (dist > r-BALL_RADIUS-PADDLE_W/2 && dist < r+BALL_RADIUS+PADDLE_W/2) return true;
+            }
+        } else {
+            if (angle >= startA && angle <= Math.PI*2 || angle >= 0 && angle <= endA) {
+                if (dist > r-BALL_RADIUS-PADDLE_W/2 && dist < r+BALL_RADIUS+PADDLE_W/2) return true;
+            }
+        }
     } else {
-        if (
-            dist > r-BALL_RADIUS-PADDLE_W/2 && dist < r+BALL_RADIUS+PADDLE_W/2 &&
-            (angle >= -Math.PI/4 && angle <= Math.PI/4)
-        ) return true;
+        // Right paddle: -pi/4 to pi/4
+        if (angle < -Math.PI/4 || angle > Math.PI/4) return false;
+        if (dist > r-BALL_RADIUS-PADDLE_W/2 && dist < r+BALL_RADIUS+PADDLE_W/2) return true;
     }
     return false;
 }
@@ -307,11 +317,24 @@ function applyPaddleBounce(p, leftSide) {
     let px = ball.x - (p.x + PADDLE_W/2);
     let py = ball.y - (p.y + PADDLE_H/2);
     let normalAngle = Math.atan2(py, px);
+
     // For left paddle, clamp normal to arc range
     if (leftSide) {
-        if (normalAngle < 5*Math.PI/4) normalAngle = 5*Math.PI/4;
-        if (normalAngle > 7*Math.PI/4) normalAngle = 7*Math.PI/4;
+        // 225° to 135° (ccw): so normal must be in that range, possibly wrapped
+        if (normalAngle < 0) normalAngle += Math.PI*2;
+        let startA = (5*Math.PI)/4, endA = (3*Math.PI)/4;
+        if (startA < endA) {
+            // Wrapped
+            if (!(normalAngle >= startA || normalAngle <= endA)) {
+                normalAngle = (normalAngle < Math.PI) ? endA : startA;
+            }
+        } else {
+            if (!(normalAngle >= startA && normalAngle <= Math.PI*2 || normalAngle >= 0 && normalAngle <= endA)) {
+                normalAngle = (Math.abs(normalAngle-startA) < Math.abs(normalAngle-endA)) ? startA : endA;
+            }
+        }
     } else {
+        // Right paddle: -pi/4 to pi/4
         if (normalAngle < -Math.PI/4) normalAngle = -Math.PI/4;
         if (normalAngle > Math.PI/4) normalAngle = Math.PI/4;
     }
@@ -390,7 +413,7 @@ function triggerGravitySpin() {
     planet = EXOPLANETS[Math.floor(Math.random()*EXOPLANETS.length)];
     gravity = planet.gravity;
     spinDir = Math.random()<0.5 ? 1 : -1;
-    spinSpeed = 1 * spinDir; // 1 rad/s
+    spinSpeed = 0.75 * spinDir; // 0.75 rad/s
     spinning = true;
     spinAngle = 0;
     gravityVec = {x: Math.sin(spinAngle), y: Math.cos(spinAngle)};
