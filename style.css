@@ -20,3 +20,28 @@ h1 {
     border-radius: 8px;
     box-shadow: 0 0 24px #000a;
 }
+
+#menu {
+    margin: 30px;
+}
+
+#menu button, #winner button {
+    font-size: 20px;
+    padding: 10px 32px;
+    margin: 0 20px;
+    background: #0af;
+    border: none;
+    border-radius: 8px;
+    color: white;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+#menu button:hover, #winner button:hover {
+    background: #0984e3;
+}
+
+#winner {
+    margin-top: 40px;
+    font-size: 2em;
+}
