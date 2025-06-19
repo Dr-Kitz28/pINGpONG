@@ -1,4 +1,4 @@
-// Minimal Alto's Adventure pINGpONG core (straight paddles, NO blocks/powerups, day-night bg)
+// Minimal Alto's Adventure pINGpONG (NO blocks, NO planets, straight paddles!)
 const WIN_SCORE = 10;
 const PADDLE_W = 18, PADDLE_H = 120;
 const BALL_RADIUS = 13;
@@ -254,7 +254,6 @@ function updatePaddles(dt) {
         let targetY = ball.y - PADDLE_H/2;
         player2.y += clamp(targetY - player2.y, -paddleSpeed, paddleSpeed);
         player2.y = clamp(player2.y, Y_RANGE[0], Y_RANGE[1]);
-        // AI paddle stays fixed horizontally
     } else {
         if (keys['w']) player1.y -= paddleSpeed;
         if (keys['s']) player1.y += paddleSpeed;
