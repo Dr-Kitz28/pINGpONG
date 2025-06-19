@@ -1,8 +1,9 @@
-// Alto's Adventure pINGpONG: Ultra-responsive paddle, sun/moon crossfade, moon phases, wolves/villagers event, birds, trees, houses, lights, NO drag bug
+// Alto's Adventure pINGpONG - Full Visual Upgrade with Smooth Paddle, Sun/Moon Masking, Wolves/Hunters, River, Herds, Horses, Roaming Villagers, Enhanced Birds, AI Paddle Fix
 
 const WIN_SCORE = 10;
 const PADDLE_W = 18, PADDLE_H = 120, BALL_RADIUS = 13;
 let BOARD_W, BOARD_H, PLAYER_X_RANGE, AI_X_RANGE, Y_RANGE;
+
 const canvas = document.getElementById('pongCanvas');
 const ctx = canvas.getContext('2d');
 const menu = document.getElementById('menu');
@@ -25,15 +26,13 @@ let lastTime = null;
 let lastPaddleBounce = null;
 let dayNightProgress = 0;
 
-// Birds, wind, trees, houses, wolves/villagers
 let birds = [], winds = [], trees = [], houses = [], wolves = [], villagers = [];
-let moonPhase = 0; // 0=new, 0.5=half, 1=full
-let moonPhaseTarget = 0;
-let moonPhaseAngle = 0;
+let moonPhase = 0;
 let fullMoonEvent = false;
 let wolfEventProgress = 0;
+let herds = [], horsemen = [];
+let riverCurve = [];
 
-// --- Responsive ---
 function setBoardSize() {
     BOARD_W = window.innerWidth;
     BOARD_H = window.innerHeight;
@@ -47,14 +46,17 @@ window.addEventListener('resize', setBoardSize);
 
 function resetGameVars() {
     setBoardSize();
-    player1 = {x: PLAYER_X_RANGE[0]+12, y: BOARD_H/2-PADDLE_H/2, color: "#7dcfff", lastX: 0, lastY: 0, vx: 0, vy: 0};
-    player2 = {x: AI_X_RANGE[1]-12, y: BOARD_H/2-PADDLE_H/2, color: "#ffd47d", lastX: 0, lastY: 0, vx: 0, vy: 0};
+    player1 = {x: PLAYER_X_RANGE[0]+12, y: BOARD_H/2-PADDLE_H/2, color: "#7dcfff", lastX: 0, lastY: 0, vx: 0, vy: 0, targetX: PLAYER_X_RANGE[0]+12, targetY: BOARD_H/2-PADDLE_H/2};
+    player2 = {x: AI_X_RANGE[1]-12, y: BOARD_H/2-PADDLE_H/2, color: "#ffd47d", lastX: 0, lastY: 0, vx: 0, vy: 0, targetX: AI_X_RANGE[1]-12, targetY: BOARD_H/2-PADDLE_H/2};
     player1Score = 0; player2Score = 0;
     lastPaddleBounce = null;
     spawnBirds();
     spawnWinds();
     spawnTrees();
     spawnHouses();
+    spawnRiver();
+    spawnHerds();
+    spawnHorsemen();
     wolves = [];
     villagers = [];
     wolfEventProgress = 0;
@@ -84,13 +86,12 @@ function endGame(text) {
 }
 
 canvas.addEventListener('mousemove', e => {
-    // Instant paddle control – NO drag lag!
     const rect = canvas.getBoundingClientRect();
     mousePos.x = e.clientX - rect.left - PADDLE_W/2;
     mousePos.y = e.clientY - rect.top - PADDLE_H/2;
     if (running && mode==="ai") {
-        player1.x = clamp(mousePos.x, PLAYER_X_RANGE[0], PLAYER_X_RANGE[1]);
-        player1.y = clamp(mousePos.y, Y_RANGE[0], Y_RANGE[1]);
+        player1.targetX = clamp(mousePos.x, PLAYER_X_RANGE[0], PLAYER_X_RANGE[1]);
+        player1.targetY = clamp(mousePos.y, Y_RANGE[0], Y_RANGE[1]);
     }
 });
 document.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; });
@@ -104,7 +105,7 @@ restartBtn.onclick = () => {
 aiBtn.onclick = () => startGame('ai');
 pvpBtn.onclick = () => startGame('pvp');
 
-// --- Alto's background ---
+// --- Color palette ---
 function lerpColor(a, b, t) {
     return [
         Math.round(a[0] + (b[0] - a[0]) * t),
@@ -121,7 +122,7 @@ const SKIES = [
 const SUN_COLOR = [255,220,120];
 const MOON_COLOR = [230,230,255];
 
-// --- Mountain profile for sun and birds ---
+// --- Mountain profile ---
 function getMountainProfilePoints(yBase, yPeak, n, offset=0, width=BOARD_W) {
     let pts = [];
     for (let i=0; i<=n; ++i) {
@@ -144,21 +145,29 @@ function drawAltoBackground(progress) {
     grad.addColorStop(1, rgb(bot));
     ctx.fillStyle = grad; ctx.fillRect(0, 0, BOARD_W, BOARD_H);
 
-    // Parallax mountain layers, foreground last
+    // Background mountains
     drawMountains(BOARD_H, 0.23, 0.19, 32, [80, 105, 142], 0.7, progress*0.5, 1.0);
     drawMountains(BOARD_H, 0.36, 0.28, 36, [65, 79, 101], 0.86, progress, 0.5);
 
-    // Foreground mountain for sun/bird occlusion
-    drawMountains(BOARD_H, 0.53, 0.36, 55, [39, 52, 77], 1.0, progress*1.5, 0.23, true, progress);
+    // Foreground mountain for sun/moon occlusion
+    drawMountains(BOARD_H, 0.53, 0.36, 70, [39, 52, 77], 1.0, progress*1.5, 0.23, true, progress);
+
+    // River
+    drawRiver();
 
     // Trees & Houses (drawn on front mountain)
     drawTreesAndHouses();
 
-    // Sun/Moon - crossfade, phases, in between mountains
+    // Sun/Moon - masked by mountain
     drawSunMoonBetweenMountains(progress);
 
     // Wolves/villagers event at full moon
     drawWolvesAndVillagers();
+
+    // Herdsmen, sheep, horses, villagers
+    drawHerds();
+    drawHorsemen();
+    drawVillagers();
 
     drawWinds();
     drawBirds();
@@ -191,15 +200,12 @@ function drawMountains(h, topFrac, baseFrac, detail, color, alpha, xshift, paral
     }
 }
 
-// --- Sun/Moon crossfade and phase ---
+// --- Sun/Moon masking and phase ---
 function drawSunMoonBetweenMountains(progress) {
-    // Sun/Moon both emerge between mountains, moon follows phase
     if (!window.__alto_mountain_profile) return;
     let mountain = window.__alto_mountain_profile;
     let n = mountain.length;
-    let sunT = 1 - Math.abs((progress*2)%2-1); // 0 (night), 1 (noon), back to 0
-
-    // X always center, Y between peaks
+    let sunT = 1 - Math.abs((progress*2)%2-1);
     let sunX = BOARD_W/2;
     let closest = mountain.slice().sort((a,b)=>Math.abs(a.x-sunX)-Math.abs(b.x-sunX))[0];
     let minY = closest.y;
@@ -207,10 +213,8 @@ function drawSunMoonBetweenMountains(progress) {
     let sunY = minY - (minY-maxY)*Math.pow(sunT,1.6);
 
     // Sun/Moon crossfade
-    let moonY = sunY;
-    let moonX = sunX;
+    let moonY = sunY, moonX = sunX;
     let moonAlpha = 0, sunAlpha = 0;
-    // Sun is up 0.11..0.89, moon is up 0..0.175, 0.825..1
     if (progress < 0.12) {
         sunAlpha = Math.max(0, (progress-0.01)/0.11);
         moonAlpha = 1-sunAlpha;
@@ -222,60 +226,88 @@ function drawSunMoonBetweenMountains(progress) {
         moonAlpha = 0;
     }
 
-    // Sun: large, glowy, always behind mountains, up to 2.5x default
     let sunR = 55*2.5;
+    // Draw sun/moon first, then mask with mountain
     ctx.save();
-    ctx.globalAlpha = sunAlpha*0.96;
-    ctx.beginPath();
-    ctx.arc(sunX, sunY, sunR, 0, Math.PI*2);
-    ctx.fillStyle = rgb(SUN_COLOR);
-    ctx.shadowColor = "#ffeab077";
-    ctx.shadowBlur = 74;
-    ctx.fill();
-    ctx.restore();
-
-    // Moon: same position, phase mask
-    updateMoonPhase(progress);
-    ctx.save();
-    ctx.globalAlpha = moonAlpha*0.96;
-    ctx.beginPath();
-    ctx.arc(moonX, moonY, sunR*0.92, 0, Math.PI*2);
-    ctx.fillStyle = rgb(MOON_COLOR);
-    ctx.shadowColor = "#ccd7ffbb";
-    ctx.shadowBlur = 40;
-    ctx.fill();
-    // Phase: mask out for waxing/waning
-    if (moonPhase < 0.98) {
-        ctx.globalCompositeOperation = "destination-out";
+    // --- Masking ---
+    // Draw a path for the mountain profile
+    let maskPath = new Path2D();
+    maskPath.moveTo(mountain[0].x, mountain[0].y);
+    for (let i=1;i<mountain.length;++i) maskPath.lineTo(mountain[i].x, mountain[i].y);
+    maskPath.lineTo(BOARD_W, BOARD_H);
+    maskPath.lineTo(0, BOARD_H);
+    maskPath.closePath();
+    // Draw sun
+    if (sunAlpha > 0.01) {
+        ctx.save();
+        ctx.globalAlpha = sunAlpha*0.96;
         ctx.beginPath();
-        let phaseR = sunR*0.92;
-        // The phase shape: a horizontally offset disk
-        let offset = (moonPhase-0.5)*phaseR*2.4;
-        ctx.arc(moonX+offset, moonY, phaseR, 0, Math.PI*2);
+        ctx.arc(sunX, sunY, sunR, 0, Math.PI*2);
+        ctx.fillStyle = rgb(SUN_COLOR);
+        ctx.shadowColor = "#ffeab077";
+        ctx.shadowBlur = 74;
         ctx.fill();
+        // Now mask (erase) the part under the mountains
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.save();
+        ctx.beginPath();
+        maskPath && ctx.clip(maskPath);
+        ctx.rect(0, 0, BOARD_W, BOARD_H);
+        ctx.fillStyle = "#000";
+        ctx.fill();
+        ctx.restore();
         ctx.globalCompositeOperation = "source-over";
+        ctx.restore();
+    }
+    // Draw moon with phase
+    updateMoonPhase(progress);
+    if (moonAlpha > 0.01) {
+        ctx.save();
+        ctx.globalAlpha = moonAlpha*0.96;
+        ctx.beginPath();
+        ctx.arc(moonX, moonY, sunR*0.92, 0, Math.PI*2);
+        ctx.fillStyle = rgb(MOON_COLOR);
+        ctx.shadowColor = "#ccd7ffbb";
+        ctx.shadowBlur = 40;
+        ctx.fill();
+        // --- phase mask ---
+        if (moonPhase < 0.98) {
+            ctx.globalCompositeOperation = "destination-out";
+            ctx.beginPath();
+            let phaseR = sunR*0.92;
+            let offset = (moonPhase-0.5)*phaseR*2.4;
+            ctx.arc(moonX+offset, moonY, phaseR, 0, Math.PI*2);
+            ctx.fill();
+            ctx.globalCompositeOperation = "source-over";
+        }
+        // Mask with mountains
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.save();
+        ctx.beginPath();
+        maskPath && ctx.clip(maskPath);
+        ctx.rect(0, 0, BOARD_W, BOARD_H);
+        ctx.fillStyle = "#000";
+        ctx.fill();
+        ctx.restore();
+        ctx.globalCompositeOperation = "source-over";
+        ctx.restore();
     }
     ctx.restore();
 }
-
 function updateMoonPhase(progress) {
-    // Progress: 0 = midnight, 0.5 = noon, 1 = next midnight
-    // Moon phase cycles every 8 "days" (for demo): new→wax→full→wan→new
+    // 8-day lunar cycle: new→wax→full→wan→new
     let moonDay = Math.floor(progress*8);
-    let t = (progress*8)%1; // 0..1 in phase
-    if (moonDay%4===0) { moonPhase = t; } // waxing
-    else if (moonDay%4===1) { moonPhase = 1; } // full
-    else if (moonDay%4===2) { moonPhase = 1-t; } // waning
-    else { moonPhase = 0; } // new
-
-    // Trigger wolf event at full moon
+    let t = (progress*8)%1;
+    if (moonDay%4===0) { moonPhase = t; }
+    else if (moonDay%4===1) { moonPhase = 1; }
+    else if (moonDay%4===2) { moonPhase = 1-t; }
+    else { moonPhase = 0; }
     if (moonPhase > 0.97 && !fullMoonEvent && (progress < 0.2 || progress > 0.8)) {
         fullMoonEvent = true;
         wolfEventProgress = 0;
         spawnWolvesAndVillagers();
     }
-    // End wolf event when moon passes
-    if (moonPhase < 0.5 && fullMoonEvent) {
+    if ((moonPhase < 0.5 || (progress > 0.2 && progress < 0.8)) && fullMoonEvent) {
         fullMoonEvent = false;
         wolves = [];
         villagers = [];
@@ -288,7 +320,7 @@ function spawnTrees() {
     trees = [];
     if (!window.__alto_mountain_profile) return;
     let pts = window.__alto_mountain_profile;
-    for (let i=3; i<pts.length-3; i+=Math.round(5+Math.random()*5)) {
+    for (let i=3; i<pts.length-3; i+=Math.round(2+Math.random()*4)) {
         let x = pts[i].x+Math.random()*8-4;
         let y = pts[i].y;
         trees.push({x, y, scale: 0.7+Math.random()*0.7});
@@ -348,8 +380,8 @@ function drawTreesAndHouses() {
         ctx.fillStyle = "#a03424";
         ctx.globalAlpha = 0.92;
         ctx.fill();
-        // Windows (lit at night)
         ctx.globalAlpha = 1;
+        // Windows (lit at night)
         ctx.fillStyle = isNight ? "#fffec0" : "#cbbd8b";
         ctx.fillRect(-6, -10, 5, 7);
         ctx.fillRect(1, -10, 5, 7);
@@ -368,27 +400,23 @@ function spawnWolvesAndVillagers() {
     let baseX = peak.x-90, baseY = peak.y+4;
     let nWolves = 4+Math.floor(Math.random()*2);
     for (let i=0;i<nWolves;++i)
-        wolves.push({x: baseX-i*18, y: baseY, howl: false, chased: false, alpha: 1});
+        wolves.push({x: baseX-i*18, y: baseY, howl: false, chased: false, alpha: 1, tail: 0, ear: 0});
     // Villagers/herdsmen, right of wolves
     for (let i=0;i<4;++i)
-        villagers.push({x: baseX+95+i*13, y: baseY+13+Math.random()*10, chasing: false, alpha: 1});
+        villagers.push({x: baseX+95+i*13, y: baseY+13+Math.random()*10, chasing: false, alpha: 1, dx: 0, dy: 0});
     wolfEventProgress = 0;
 }
 function drawWolvesAndVillagers() {
     if (!wolves.length) return;
-    // Animation progress: 0..1 = approach, 1..1.3 = howling, then chase
     wolfEventProgress += 1/60;
-    // Wolves howling: leader first, then each delays by 0.09
     for (let i=0;i<wolves.length;++i) {
         if (wolfEventProgress > 1.0 + i*0.09) wolves[i].howl = true;
-        // After 1.3, chased!
         if (wolfEventProgress > 1.4) wolves[i].chased = true;
-        // If chased, run left
         if (wolves[i].chased) wolves[i].x -= 2.5;
+        wolves[i].tail = Math.sin(performance.now()/210+(i*0.8))*4;
+        wolves[i].ear = Math.abs(Math.sin(performance.now()/340+(i*0.7)))*3;
     }
-    // Villagers chase after 1.5
     if (wolfEventProgress > 1.5) villagers.forEach(v=>{v.chasing=true;});
-    // Villagers move toward wolves
     for (let v of villagers) {
         if (v.chasing) v.x -= 2.4;
     }
@@ -401,27 +429,40 @@ function drawWolvesAndVillagers() {
         ctx.scale(1.15, 1.15);
         // Body
         ctx.beginPath();
-        ctx.ellipse(0, 0, 10, 5, 0, 0, Math.PI*2);
-        ctx.fillStyle = "#202025";
+        ctx.ellipse(0, 0, 11, 5, 0, 0, Math.PI*2);
+        ctx.fillStyle = "#23232b";
         ctx.globalAlpha = 0.95;
         ctx.fill();
         // Head
+        ctx.save();
+        ctx.translate(10, -6);
+        ctx.rotate(w.howl?(-0.33):0);
         ctx.beginPath();
-        ctx.ellipse(9, -6, 5, 3.5, -0.3, 0, Math.PI*2);
+        ctx.ellipse(0, 0, 5, 3.5, -0.3, 0, Math.PI*2);
         ctx.fill();
-        // Tail
+        // Ears
         ctx.beginPath();
-        ctx.moveTo(-11,2); ctx.lineTo(-19,0); ctx.lineTo(-11,-1);
+        ctx.moveTo(1,-3);
+        ctx.lineTo(3-w.ear,-7);
+        ctx.lineTo(5, -2);
         ctx.closePath();
         ctx.fill();
+        ctx.restore();
+        // Tail
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(-11,2); ctx.lineTo(-19,0+w.tail); ctx.lineTo(-11,-1);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
         // Legs
         ctx.beginPath();
         ctx.moveTo(-4,5); ctx.lineTo(-4,12);
         ctx.moveTo(2,5); ctx.lineTo(2,12);
-        ctx.strokeStyle = "#202025";
+        ctx.strokeStyle = "#23232b";
         ctx.lineWidth = 2.5;
         ctx.stroke();
-        // Howl pose: leader raises head
+        // Howl aura
         if (w.howl) {
             ctx.save();
             ctx.rotate(-0.32);
@@ -465,25 +506,25 @@ function drawWolvesAndVillagers() {
 function spawnBirds() {
     birds = [];
     let nFlocks = 1 + Math.floor(Math.random()*2);
+    let yBase = BOARD_H*0.28 + Math.random()*BOARD_H*0.16;
     for (let f=0; f<nFlocks; ++f) {
-        let n = 3 + Math.floor(Math.random()*5); // up to 7 birds
+        let n = 2 + Math.floor(Math.random()*6); // up to 7
         let t0 = Math.random()*0.7+0.1;
         let leftToRight = Math.random() > 0.5;
-        let baseY = BOARD_H*0.28 + Math.random()*BOARD_H*0.16;
         let arcHeight = 60+Math.random()*60;
         let speed = (0.13+Math.random()*0.18)*(leftToRight?1:-1);
         for (let i=0; i<n; ++i) {
             birds.push({
-                t: t0-i*0.07,
-                arcY: baseY+Math.random()*9,
+                t: t0-i*0.09,
+                arcY: yBase+Math.random()*11,
                 arcHeight: arcHeight+Math.random()*13,
                 speed,
                 leftToRight,
                 offset: Math.random()*Math.PI*2,
                 spread: 14+Math.random()*10,
                 size: 13+Math.random()*6,
-                alpha: 0.15+Math.random()*0.20,
-                wing: Math.random()*Math.PI*2
+                alpha: 0.21+Math.random()*0.15,
+                waveSeed: Math.random()*Math.PI*2
             });
         }
     }
@@ -494,13 +535,11 @@ function drawBirds() {
         b.t += b.speed/120;
         if (b.t > 1.2) b.t = -0.2;
         if (b.t < -0.2) b.t = 1.2;
-        // Path: low arc, center region
         let px = BOARD_W*(b.leftToRight?b.t:1-b.t);
         let py = b.arcY - Math.sin(b.t*Math.PI)*b.arcHeight;
-        // Wing animation
-        let now = performance.now()/550 + b.offset;
-        let wingAngle = Math.sin(now)*0.74 + 0.17*Math.cos(now*0.7+b.offset);
-        b.wing = wingAngle;
+        // Wing animation: smooth wave
+        let now = performance.now()/590 + b.offset;
+        let wingAngle = Math.sin(now+b.waveSeed)*0.88 + 0.13*Math.cos(now*0.7+b.waveSeed*1.2);
         ctx.save();
         ctx.globalAlpha = b.alpha;
         ctx.translate(px, py);
@@ -510,34 +549,27 @@ function drawBirds() {
         ctx.ellipse(0, 0, b.size*0.7, b.size*0.32, 0, 0, Math.PI*2);
         ctx.fillStyle = "#1a151a";
         ctx.fill();
-        // Wings: animated up/down
-        ctx.save();
-        ctx.rotate(-b.wing*0.9);
-        ctx.beginPath();
-        ctx.moveTo(0,0);
-        ctx.lineTo(-b.size*1.1, -b.size*0.7);
-        ctx.lineWidth = 2.7;
-        ctx.strokeStyle = "#16151a";
-        ctx.shadowColor = "#000";
-        ctx.shadowBlur = 2;
-        ctx.stroke();
-        ctx.restore();
-
-        ctx.save();
-        ctx.rotate(b.wing*0.9);
-        ctx.beginPath();
-        ctx.moveTo(0,0);
-        ctx.lineTo(b.size*1.1, -b.size*0.7);
-        ctx.lineWidth = 2.7;
-        ctx.strokeStyle = "#16151a";
-        ctx.shadowColor = "#000";
-        ctx.shadowBlur = 2;
-        ctx.stroke();
-        ctx.restore();
-
+        // Wings: smooth wave
+        for (let dir of [-1,1]) {
+            ctx.save();
+            ctx.rotate(dir*wingAngle*0.72);
+            ctx.beginPath();
+            ctx.moveTo(0,0);
+            for (let j=1;j<=6;++j) {
+                let t = j/6;
+                let wx = dir*b.size*(0.7*t+0.5*t*t);
+                let wy = -b.size*0.6*t*(1-t) + Math.sin(now*2+dir*j+b.waveSeed)*0.8;
+                ctx.lineTo(wx,wy);
+            }
+            ctx.lineWidth = 2.0;
+            ctx.strokeStyle = "#19181a";
+            ctx.shadowColor = "#000";
+            ctx.shadowBlur = 2;
+            ctx.stroke();
+            ctx.restore();
+        }
         ctx.restore();
     }
-    // Randomly respawn flocks every 8-12 seconds
     if (Math.random()<0.0015) spawnBirds();
 }
 
@@ -574,6 +606,208 @@ function drawWinds() {
             if (i===0) ctx.moveTo(x,y);
             else ctx.lineTo(x,y);
         }
+        ctx.stroke();
+        ctx.restore();
+    }
+}
+
+// --- River ---
+function spawnRiver() {
+    riverCurve = [];
+    let y = BOARD_H*0.84;
+    for (let i=0;i<=30;++i) {
+        let t = i/30;
+        let x = t*BOARD_W;
+        let noise = Math.sin(t*6+dayNightProgress*9)*18+Math.cos(t*13+dayNightProgress*3)*9;
+        riverCurve.push({x, y: y+noise});
+    }
+}
+function drawRiver() {
+    if (!riverCurve.length) return;
+    ctx.save();
+    ctx.globalAlpha = 0.54;
+    ctx.beginPath();
+    ctx.moveTo(riverCurve[0].x, riverCurve[0].y);
+    for (let i=1;i<riverCurve.length;++i)
+        ctx.lineTo(riverCurve[i].x, riverCurve[i].y);
+    ctx.lineTo(BOARD_W, BOARD_H);
+    ctx.lineTo(0, BOARD_H);
+    ctx.closePath();
+    ctx.fillStyle = "#7fd2f8";
+    ctx.shadowColor = "#a0e4ff";
+    ctx.shadowBlur = 18;
+    ctx.fill();
+    // White foam lines
+    ctx.globalAlpha = 0.13;
+    for (let j=0;j<3;++j) {
+        ctx.beginPath();
+        for (let i=0;i<riverCurve.length;++i) {
+            let t = i/(riverCurve.length-1);
+            let x = riverCurve[i].x;
+            let y = riverCurve[i].y-8-j*6+Math.sin(dayNightProgress*8+t*7+j)*5;
+            if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+        }
+        ctx.lineWidth = 2.6-0.9*j;
+        ctx.strokeStyle = "#fff";
+        ctx.stroke();
+    }
+    ctx.restore();
+}
+
+// --- Herdsmen, Sheep, Horsemen ---
+function spawnHerds() {
+    herds = [];
+    let riverY = BOARD_H*0.84;
+    for (let i=0;i<2;++i) {
+        let baseX = BOARD_W*0.2 + i*BOARD_W*0.45;
+        let baseY = riverY-26-Math.random()*35;
+        let dx = 1.5 + Math.random()*1.5;
+        let sheep = [];
+        for (let j=0;j<7+Math.floor(Math.random()*5);++j) {
+            sheep.push({x: baseX-Math.random()*55+j*12, y: baseY+Math.random()*7, grazing: true});
+        }
+        herds.push({x: baseX, y: baseY, dx, sheep, herding: false, herder: {x: baseX-30, y: baseY-12}});
+    }
+}
+function spawnHorsemen() {
+    horsemen = [];
+    let riverY = BOARD_H*0.84;
+    for (let i=0;i<2;++i) {
+        let baseX = BOARD_W*0.3 + i*BOARD_W*0.3;
+        let baseY = riverY-46-Math.random()*30;
+        let dx = (Math.random()>0.5?1:-1)*(1.1+Math.random());
+        horsemen.push({x: baseX, y: baseY, dx, grazing: true});
+    }
+}
+function drawHerds() {
+    let isNight = (dayNightProgress < 0.18 || dayNightProgress > 0.82);
+    for (let h of herds) {
+        // Move sheep and herder
+        if (!isNight) {
+            for (let s of h.sheep) {
+                s.x += (Math.random()-0.5)*0.6 + h.dx/60;
+                s.y += (Math.random()-0.5)*0.4;
+                if (s.x > BOARD_W-40) s.x = 40;
+                if (s.x < 30) s.x = BOARD_W-30;
+            }
+            h.herder.x += h.dx/55 + (Math.random()-0.5)*0.5;
+        } else {
+            // Herd sheep back to keep (house)
+            for (let s of h.sheep) {
+                s.x += (h.x-s.x)*0.01;
+                s.y += (h.y-s.y)*0.01;
+            }
+            h.herder.x += (h.x-h.herder.x)*0.008;
+        }
+        // Draw sheep
+        for (let s of h.sheep) {
+            ctx.save();
+            ctx.globalAlpha = 0.72;
+            ctx.translate(s.x, s.y);
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 7, 5, 0, 0, Math.PI*2);
+            ctx.fillStyle = "#fff";
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(6, -2, 2, 0, Math.PI*2);
+            ctx.fillStyle = "#d9d9d9";
+            ctx.fill();
+            ctx.restore();
+        }
+        // Draw herder
+        ctx.save();
+        ctx.globalAlpha = 0.78;
+        ctx.translate(h.herder.x, h.herder.y);
+        ctx.beginPath();
+        ctx.arc(0, 0, 6, 0, Math.PI*2);
+        ctx.fillStyle = "#dbb871";
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(0, -8, 3.2, 0, Math.PI*2);
+        ctx.fillStyle = "#f6e8ce";
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(7, -2); ctx.lineTo(13, 7);
+        ctx.strokeStyle = "#4b3d23";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.restore();
+    }
+}
+function drawHorsemen() {
+    let isNight = (dayNightProgress < 0.18 || dayNightProgress > 0.82);
+    for (let h of horsemen) {
+        // Move horseman
+        if (!isNight) {
+            h.x += h.dx/47;
+            if (h.x > BOARD_W-70) h.dx *= -1;
+            if (h.x < 45) h.dx *= -1;
+        } else {
+            // Return to stable (house)
+            let targetX = BOARD_W*0.5;
+            h.x += (targetX-h.x)*0.01;
+        }
+        ctx.save();
+        ctx.globalAlpha = 0.90;
+        ctx.translate(h.x, h.y);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 13, 7, 0, 0, Math.PI*2); // horse body
+        ctx.fillStyle = "#6d4b2d";
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(14, -6, 4, 0, Math.PI*2); // horse head
+        ctx.fill();
+        // Horse legs
+        ctx.beginPath();
+        for (let i=0;i<4;++i) {
+            ctx.moveTo(-6+(i*6), 7);
+            ctx.lineTo(-6+(i*6), 16+Math.sin(performance.now()/300+(h.x+i)*0.03)*2);
+        }
+        ctx.strokeStyle = "#6d4b2d";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        // Rider
+        ctx.save();
+        ctx.translate(0, -10);
+        ctx.beginPath();
+        ctx.arc(0, 0, 4.5, 0, Math.PI*2);
+        ctx.fillStyle = "#f6e8ce";
+        ctx.fill();
+        ctx.restore();
+        ctx.restore();
+    }
+}
+
+// --- Roaming Villagers ---
+function drawVillagers() {
+    let isNight = (dayNightProgress < 0.18 || dayNightProgress > 0.82);
+    if (!window.__alto_mountain_profile) return;
+    let mtn = window.__alto_mountain_profile;
+    let nVillagers = 5;
+    for (let i=0;i<nVillagers;++i) {
+        let t = (i+1)/(nVillagers+1);
+        let idx = Math.floor(t*(mtn.length-1));
+        let base = mtn[idx];
+        let vx = base.x + Math.sin(performance.now()/1800 + i)*18;
+        let vy = base.y-18+Math.sin(performance.now()/1200 + i*2)*7;
+        ctx.save();
+        ctx.globalAlpha = 0.7;
+        ctx.translate(vx, vy);
+        // Body
+        ctx.beginPath();
+        ctx.arc(0, 0, 6, 0, Math.PI*2);
+        ctx.fillStyle = "#8e775f";
+        ctx.fill();
+        // Head
+        ctx.beginPath();
+        ctx.arc(0, -8, 3.2, 0, Math.PI*2);
+        ctx.fillStyle = "#f6e8ce";
+        ctx.fill();
+        // Stick
+        ctx.beginPath();
+        ctx.moveTo(7, -2); ctx.lineTo(13, 7);
+        ctx.strokeStyle = "#4b3d23";
+        ctx.lineWidth = 2;
         ctx.stroke();
         ctx.restore();
     }
@@ -662,15 +896,28 @@ function resetBall(dir) {
 }
 
 function updatePaddles(dt) {
-    // Ultra-responsive: always update from input, no lag
+    // Ultra-smooth: ease to target with spring interpolation
+    // Player 1 (user)
     if (mode==='ai') {
-        // Mouse paddle is set directly in mousemove handler
+        player1.x += (player1.targetX-player1.x)*0.45;
+        player1.y += (player1.targetY-player1.y)*0.45;
     } else {
         const paddleSpeed = 7.4;
         if (keys['w']) player1.y -= paddleSpeed;
         if (keys['s']) player1.y += paddleSpeed;
         player1.x = clamp(player1.x, PLAYER_X_RANGE[0], PLAYER_X_RANGE[1]);
         player1.y = clamp(player1.y, Y_RANGE[0], Y_RANGE[1]);
+    }
+    // Player 2 (AI or user)
+    if (mode==='ai') {
+        // AI: Predict ball trajectory with smoothing
+        let predictY = ball.y - PADDLE_H/2;
+        player2.y += (predictY - player2.y)*0.19;
+        player2.y = clamp(player2.y, Y_RANGE[0], Y_RANGE[1]);
+        // AI paddle stays at targetX
+        player2.x = AI_X_RANGE[1]-12;
+    } else {
+        const paddleSpeed = 7.4;
         if (keys['arrowup']) player2.y -= paddleSpeed;
         if (keys['arrowdown']) player2.y += paddleSpeed;
         player2.x = clamp(player2.x, AI_X_RANGE[0], AI_X_RANGE[1]);
