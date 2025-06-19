@@ -16,9 +16,10 @@ h1 {
     background: #111;
     display: block;
     margin: 0 auto;
-    border: 2px solid #fff;
-    border-radius: 8px;
-    box-shadow: 0 0 24px #000a;
+    border: 4px solid #fff;
+    border-radius: 12px;
+    box-shadow: 0 0 32px #000a;
+    transition: box-shadow 0.5s;
 }
 
 #menu {
@@ -44,4 +45,64 @@ h1 {
 #winner {
     margin-top: 40px;
     font-size: 2em;
+}
+
+#planetPopup {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    z-index: 10;
+    transform: translate(-50%,-50%);
+    background: rgba(40,40,40,0.95);
+    border: 3px solid #fff;
+    border-radius: 20px;
+    padding: 32px 46px 16px 46px;
+    box-shadow: 0 0 30px #000b;
+    text-align: center;
+    animation: popup-planet 2s cubic-bezier(.43,2,.27,.92);
+    min-width: 180px;
+}
+
+@keyframes popup-planet {
+    0% {transform: translate(-50%,-50%) scale(0.8);}
+    70% {transform: translate(-50%,-50%) scale(1.08);}
+    100% {transform: translate(-50%,-50%) scale(1);}
+}
+
+#planetGraphic {
+    font-size: 60px;
+    margin-bottom: 10px;
+    animation: planet-spin 2s linear infinite;
+    display: inline-block;
+}
+
+@keyframes planet-spin {
+    0% { transform: rotate(0deg);}
+    100% { transform: rotate(360deg);}
+}
+
+#planetLabel {
+    font-size: 1.4em;
+    margin-bottom: 2px;
+}
+#gravityLabel {
+    font-size: 1.1em;
+    color: #0af;
+}
+
+#spinningIndicator {
+    position: absolute;
+    top: 8px;
+    right: 2vw;
+    font-size: 1.5em;
+    color: #0af;
+    background: #fff2;
+    padding: 8px 22px;
+    border-radius: 16px;
+    box-shadow: 0 0 8px #0af8;
+    animation: spin-glow 1s infinite alternate;
+}
+@keyframes spin-glow {
+    0% { box-shadow: 0 0 8px #0af8;}
+    100% { box-shadow: 0 0 24px #0af;}
 }
