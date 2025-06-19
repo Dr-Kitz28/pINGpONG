@@ -1,4 +1,4 @@
-// Minimal Alto's Adventure pINGpONG (NO blocks, NO planets, straight paddles!)
+// Minimal Alto's Adventure pINGpONG with swept collision for fast paddle/ball movement (NO blocks or planets)
 const WIN_SCORE = 10;
 const PADDLE_W = 18, PADDLE_H = 120;
 const BALL_RADIUS = 13;
@@ -228,6 +228,8 @@ function resetBall(dir) {
     ball = {
         x: BOARD_W/2,
         y: BOARD_H/2,
+        prevX: BOARD_W/2,
+        prevY: BOARD_H/2,
         vx: 5.0*dir,
         vy: 2 + Math.random()*2*(Math.random()>0.5?1:-1)
     };
@@ -270,29 +272,38 @@ function clamp(val, min, max) {
     return Math.max(min, Math.min(max, val));
 }
 
-// Simple straight paddle collision and anti-stick
-function checkPaddleBounce(p, leftPaddle) {
-    if (ball.y + BALL_RADIUS < p.y) return false;
-    if (ball.y - BALL_RADIUS > p.y + PADDLE_H) return false;
-    if (leftPaddle) {
-        if (ball.x - BALL_RADIUS < p.x + PADDLE_W && ball.x > p.x) return true;
-    } else {
-        if (ball.x + BALL_RADIUS > p.x && ball.x < p.x + PADDLE_W) return true;
+// Swept collision for fast ball/paddle movement
+function sweptPaddleBounce(p, leftPaddle) {
+    let minX = p.x, maxX = p.x + PADDLE_W;
+    let minY = p.y, maxY = p.y + PADDLE_H;
+    let dx = ball.x - ball.prevX;
+    let dy = ball.y - ball.prevY;
+    let steps = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / (BALL_RADIUS * 0.7));
+    steps = Math.max(1, steps);
+    for (let i = 1; i <= steps; ++i) {
+        let t = i / steps;
+        let cx = ball.prevX + dx * t;
+        let cy = ball.prevY + dy * t;
+        if (
+            cx + BALL_RADIUS > minX && cx - BALL_RADIUS < maxX &&
+            cy + BALL_RADIUS > minY && cy - BALL_RADIUS < maxY
+        ) {
+            ball.x = cx;
+            ball.y = cy;
+            return true;
+        }
     }
     return false;
 }
 function dynamicPaddleBounce(p, leftPaddle) {
-    // Add paddle velocity for realism
-    let impact = (ball.y-(p.y+PADDLE_H/2))/(PADDLE_H/2); // -1 (top), 0 (center), 1 (bottom)
+    let impact = (ball.y-(p.y+PADDLE_H/2))/(PADDLE_H/2);
     let paddleSpeed = p.vy || 0;
     let baseVy = impact*7 + paddleSpeed*0.5 + (Math.random()-0.5)*1.1;
     let baseVx = leftPaddle ? Math.abs(ball.vx) : -Math.abs(ball.vx);
     ball.vx = baseVx + (p.vx||0)*0.3;
     ball.vy = baseVy;
-    // Always move ball outside paddle
     if (leftPaddle) ball.x = p.x + PADDLE_W + BALL_RADIUS + 1;
     else ball.x = p.x - BALL_RADIUS - 1;
-    // Clamp speed
     let speed = Math.sqrt(ball.vx*ball.vx + ball.vy*ball.vy);
     let minSpeed = 4.7, maxSpeed = 13.5;
     speed = Math.max(Math.min(speed, maxSpeed), minSpeed);
@@ -308,12 +319,13 @@ function gameLoop(ts) {
     let dt = ts-lastTime;
     lastTime = ts;
 
-    // Day/Night cycle
     dayNightProgress += dt/(1000*180);
     if (dayNightProgress > 1) dayNightProgress -= 1;
 
     updatePaddles(dt);
 
+    ball.prevX = ball.x;
+    ball.prevY = ball.y;
     ball.x += ball.vx;
     ball.y += ball.vy;
 
@@ -327,7 +339,7 @@ function gameLoop(ts) {
     }
 
     // Left paddle
-    if (checkPaddleBounce(player1, true)) {
+    if (sweptPaddleBounce(player1, true)) {
         if (ball.vx < 0 && lastPaddleBounce !== "left") {
             dynamicPaddleBounce(player1, true);
         }
@@ -335,7 +347,7 @@ function gameLoop(ts) {
         lastPaddleBounce = null;
     }
     // Right paddle
-    if (checkPaddleBounce(player2, false)) {
+    if (sweptPaddleBounce(player2, false)) {
         if (ball.vx > 0 && lastPaddleBounce !== "right") {
             dynamicPaddleBounce(player2, false);
         }
