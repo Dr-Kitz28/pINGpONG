@@ -1,5 +1,4 @@
 // === EXOPLANET LIST: Sample, gravity <= 15m/s^2 ===
-// (For a real game, fetch a larger list from an exoplanet API or data file)
 const EXOPLANETS = [
     { name: "Earth", emoji: "🌍", gravity: 9.8 },
     { name: "Mars", emoji: "🪐", gravity: 3.7 },
@@ -17,7 +16,7 @@ const EXOPLANETS = [
 
 const WIN_SCORE = 10;
 const PADDLE_W = 24, PADDLE_H = 120;
-const PADDLE_MARGIN = 40; // min dist from center
+const PADDLE_MARGIN = 40;
 const BALL_RADIUS = 12;
 const BLOCK_SIZE = 38;
 const BLOCK_MARGIN = 3*BLOCK_SIZE;
@@ -41,6 +40,9 @@ const planetGraphic = document.getElementById('planetGraphic');
 const planetLabel = document.getElementById('planetLabel');
 const gravityLabel = document.getElementById('gravityLabel');
 const spinningIndicator = document.getElementById('spinningIndicator');
+const score1El = document.getElementById('score1');
+const score2El = document.getElementById('score2');
+const scoreboard = document.getElementById('scoreboard');
 
 let player1, player2, ball, obstacles, obstacleTimer, spinning, spinDir, spinAngle, spinSpeed, gravity, gravityVec, gravityTimeout, spinTimeout, planet, lastSpinStart;
 let player1Score, player2Score;
@@ -48,6 +50,7 @@ let mode = null;
 let running = false, mousePos = {x:0, y:0};
 let keys = {};
 let lastTime = null;
+let justBounced1 = false, justBounced2 = false;
 
 // === RESPONSIVE BOARD ===
 function setBoardSize() {
@@ -72,6 +75,8 @@ function resetGameVars() {
     gravityVec = {x:0, y:0};
     gravityTimeout = null; spinTimeout = null; planet = null;
     lastSpinStart = 0;
+    justBounced1 = false;
+    justBounced2 = false;
     resetBall(Math.random()>0.5?1:-1);
 }
 
@@ -84,11 +89,20 @@ function startGame(selectedMode) {
     canvas.style.display = '';
     planetPopup.style.display = 'none';
     spinningIndicator.style.display = 'none';
+    scoreboard.style.display = '';
     lastTime = null;
     requestAnimationFrame(gameLoop);
 }
+function endGame(text) {
+    running = false;
+    winnerText.textContent = text;
+    winnerDiv.style.display = '';
+    canvas.style.display = 'none';
+    planetPopup.style.display = 'none';
+    spinningIndicator.style.display = 'none';
+    scoreboard.style.display = 'none';
+}
 
-// === INPUT HANDLERS ===
 canvas.addEventListener('mousemove', e => {
     const rect = canvas.getBoundingClientRect();
     mousePos.x = e.clientX - rect.left - PADDLE_W/2;
@@ -111,12 +125,12 @@ function drawPaddle(p, leftSide) {
     let r = 74;
     let startAng, endAng, ccw;
     if (leftSide) {
-        // Left paddle: arc from 225° to 135°, concave faces right (center line), draw counterclockwise
+        // Left paddle: arc from 225° to 135°, concave faces right, draw counterclockwise
         startAng = (5 * Math.PI) / 4; // 225°
         endAng = (3 * Math.PI) / 4;   // 135°
         ccw = true;
     } else {
-        // Right paddle: arc from -45° to 45°, concave faces left (center line), draw clockwise
+        // Right paddle: arc from -45° to 45°, concave faces left, draw clockwise
         startAng = -Math.PI / 4;      // -45°
         endAng = Math.PI / 4;         // 45°
         ccw = false;
@@ -135,13 +149,19 @@ function drawObstacles() {
     for (const ob of obstacles) {
         ctx.save();
         ctx.translate(ob.x+BLOCK_SIZE/2, ob.y+BLOCK_SIZE/2);
+        // Animate pulse
+        let pulse = 1 + 0.09*Math.sin(performance.now()/230 + ob.x+ob.y);
+        ctx.scale(pulse, pulse);
         ctx.beginPath();
         ctx.rect(-BLOCK_SIZE/2, -BLOCK_SIZE/2, BLOCK_SIZE, BLOCK_SIZE);
         ctx.fillStyle = getBlockColor(ob.type);
-        ctx.globalAlpha = 0.8;
+        ctx.globalAlpha = 0.88;
+        ctx.shadowColor = getBlockColor(ob.type);
+        ctx.shadowBlur = 16;
         ctx.fill();
         ctx.globalAlpha = 1;
         ctx.lineWidth = 3;
+        ctx.shadowBlur = 0;
         ctx.strokeStyle = "#fff";
         ctx.stroke();
         ctx.font = "28px serif";
@@ -199,10 +219,13 @@ function drawCenterLine(){
 }
 
 function drawScore(){
-    ctx.font = "38px Arial";
+    ctx.font = "38px 'Minecraftia', Arial, monospace";
     ctx.fillStyle = "#fff";
     ctx.fillText(player1Score, BOARD_W/2 - 78, 54);
     ctx.fillText(player2Score, BOARD_W/2 + 54, 54);
+    // Floating glass scoreboard
+    score1El.textContent = player1Score;
+    score2El.textContent = player2Score;
 }
 
 function drawSpinningBorder(){
@@ -248,6 +271,8 @@ function resetBall(dir) {
         stuck: false,
         stuckTimer: 0
     };
+    justBounced1 = false;
+    justBounced2 = false;
 }
 
 function updatePaddles(dt) {
@@ -280,22 +305,17 @@ function clamp(val, min, max) {
     return Math.max(min, Math.min(max, val));
 }
 
-// Improved arc paddle collision & normal calculation
+// Sticky bug fix: Only allow bounce if not justBounced
 function checkPaddleHit(p, leftSide) {
-    // Transform ball to paddle local
     let px = ball.x - (p.x + PADDLE_W/2);
     let py = ball.y - (p.y + PADDLE_H/2);
     let r = 74;
     let dist = Math.sqrt(px*px+py*py);
     let angle = Math.atan2(py, px);
-    // Left paddle: arc from 225deg to 135deg (ccw)
-    // Right paddle: arc from -45deg to 45deg (cw)
     if (leftSide) {
-        // Normalize angle to [0, 2pi]
         if (angle < 0) angle += Math.PI*2;
         let startA = (5*Math.PI)/4, endA = (3*Math.PI)/4;
         if (startA < endA) {
-            // Wrapped around 2pi
             if (angle >= startA || angle <= endA) {
                 if (dist > r-BALL_RADIUS-PADDLE_W/2 && dist < r+BALL_RADIUS+PADDLE_W/2) return true;
             }
@@ -305,26 +325,21 @@ function checkPaddleHit(p, leftSide) {
             }
         }
     } else {
-        // Right paddle: -pi/4 to pi/4
         if (angle < -Math.PI/4 || angle > Math.PI/4) return false;
         if (dist > r-BALL_RADIUS-PADDLE_W/2 && dist < r+BALL_RADIUS+PADDLE_W/2) return true;
     }
     return false;
 }
 
-// Reflect about the correct normal for arc paddle
 function applyPaddleBounce(p, leftSide) {
     let px = ball.x - (p.x + PADDLE_W/2);
     let py = ball.y - (p.y + PADDLE_H/2);
     let normalAngle = Math.atan2(py, px);
 
-    // For left paddle, clamp normal to arc range
     if (leftSide) {
-        // 225° to 135° (ccw): so normal must be in that range, possibly wrapped
         if (normalAngle < 0) normalAngle += Math.PI*2;
         let startA = (5*Math.PI)/4, endA = (3*Math.PI)/4;
         if (startA < endA) {
-            // Wrapped
             if (!(normalAngle >= startA || normalAngle <= endA)) {
                 normalAngle = (normalAngle < Math.PI) ? endA : startA;
             }
@@ -334,32 +349,27 @@ function applyPaddleBounce(p, leftSide) {
             }
         }
     } else {
-        // Right paddle: -pi/4 to pi/4
         if (normalAngle < -Math.PI/4) normalAngle = -Math.PI/4;
         if (normalAngle > Math.PI/4) normalAngle = Math.PI/4;
     }
     let v = { x: ball.vx, y: ball.vy };
-    // Normal vector
     let n = { x: Math.cos(normalAngle), y: Math.sin(normalAngle) };
-    // v dot n
     let dot = v.x*n.x + v.y*n.y;
-    // Reflect v: v' = v - 2(v·n)n
     ball.vx = v.x - 2*dot*n.x;
     ball.vy = v.y - 2*dot*n.y;
-    // Add some randomness/spin
     ball.vy += (Math.random()-0.5)*2;
     let speed = Math.sqrt(ball.vx*ball.vx + ball.vy*ball.vy);
     let minSpeed = 7, maxSpeed = 15;
-    speed = clamp(speed, minSpeed, maxSpeed);
+    speed = Math.max(Math.min(speed, maxSpeed), minSpeed);
     let theta = Math.atan2(ball.vy, ball.vx);
     ball.vx = speed * Math.cos(theta);
     ball.vy = speed * Math.sin(theta);
-    // Make sure ball points away from paddle
     if ((leftSide && ball.vx < 0) || (!leftSide && ball.vx > 0))
         ball.vx *= -1;
+    if (leftSide) justBounced1 = true;
+    else justBounced2 = true;
 }
 
-// Obstacle collision
 function checkBlockHit(ob) {
     let bx = ball.x, by = ball.y;
     if (spinning) {
@@ -447,7 +457,6 @@ function smoothResetSpin() {
     fade();
 }
 
-// Spawns obstacles at random valid locations
 function updateObstacles(dt) {
     obstacles = obstacles.filter(ob => (Date.now()<ob.spawned+ob.life));
     while (obstacles.length<MAX_BLOCKS) {
@@ -504,13 +513,22 @@ function gameLoop(ts) {
         ball.vy *= -1;
     }
 
+    // Sticky bug fix: Only allow bounce if not justBounced
     if (checkPaddleHit(player1,true)) {
-        ball.x = player1.x+PADDLE_W+BALL_RADIUS;
-        applyPaddleBounce(player1, true);
+        if (!justBounced1) {
+            ball.x = player1.x+PADDLE_W+BALL_RADIUS;
+            applyPaddleBounce(player1, true);
+        }
+    } else {
+        justBounced1 = false;
     }
     if (checkPaddleHit(player2,false)) {
-        ball.x = player2.x-BALL_RADIUS;
-        applyPaddleBounce(player2, false);
+        if (!justBounced2) {
+            ball.x = player2.x-BALL_RADIUS;
+            applyPaddleBounce(player2, false);
+        }
+    } else {
+        justBounced2 = false;
     }
 
     for (const ob of obstacles) {
@@ -521,7 +539,6 @@ function gameLoop(ts) {
         }
     }
 
-    // Ball crossing center (for gravity effect)
     let crossed = false;
     if (!spinning && Math.abs(ball.x-BOARD_W/2)<BALL_RADIUS) crossed=true;
     if (spinning) {
@@ -566,13 +583,4 @@ function scoreReset() {
         spinningIndicator.style.display = 'none';
         if (spinTimeout) clearTimeout(spinTimeout);
     }
-}
-
-function endGame(text) {
-    running = false;
-    winnerText.textContent = text;
-    winnerDiv.style.display = '';
-    canvas.style.display = 'none';
-    planetPopup.style.display = 'none';
-    spinningIndicator.style.display = 'none';
 }
