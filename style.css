@@ -9,7 +9,6 @@ body {
     overflow: hidden;
 }
 
-/* Alto's Adventure Day/Night BG - filled in by JS on canvas */
 canvas#pongCanvas {
     display: block;
     margin: 0 auto;
@@ -132,26 +131,4 @@ canvas#pongCanvas {
     font-size: 1.2em;
     letter-spacing: 1px;
     color: #5991c7;
-}
-
-#spinningIndicator {
-    position: absolute;
-    top: 10px;
-    right: 2vw;
-    font-size: 1.1em;
-    color: #fff;
-    background: #81b1d3cc;
-    padding: 10px 22px;
-    border-radius: 20px;
-    box-shadow: 0 0 16px #b5b07a, 0 2px 8px #0003;
-    animation: spin-glow 1.5s infinite alternate;
-    z-index: 40;
-    font-weight: 600;
-    letter-spacing: 2px;
-    border: 2.5px solid #3c4d5c;
-    font-family: 'Minecraftia', Arial, sans-serif;
-}
-@keyframes spin-glow {
-    0% { box-shadow: 0 0 8px #b5b07a;}
-    100% { box-shadow: 0 0 28px #b5b07a;}
 }
