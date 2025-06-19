@@ -34,6 +34,7 @@ canvas#pongCanvas {
     position: relative;
     user-select: none;
     pointer-events: none;
+    transition: opacity 0.2s;
 }
 
 #scoreboard {
