@@ -33,6 +33,7 @@ canvas#pongCanvas {
     z-index: 10;
     position: relative;
     user-select: none;
+    pointer-events: none;
 }
 
 #scoreboard {
@@ -53,6 +54,7 @@ canvas#pongCanvas {
     font-weight: bold;
     letter-spacing: 2px;
     text-shadow: 1px 2px 0 #fffbe777, 0 0 6px #283e2a;
+    pointer-events: none;
 }
 
 .score-player {
