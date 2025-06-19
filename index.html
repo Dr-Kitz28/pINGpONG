@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>pINGpONG</title>
-    <!-- Minecraft Font -->
+    <!-- Minecraftia font for title and score, soft UI elsewhere -->
     <link href="https://fonts.cdnfonts.com/css/minecraftia" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
@@ -11,25 +11,20 @@
     <h1 class="minecraft-title">pINGpONG</h1>
     <div id="scoreboard" style="display: none;">
         <div class="score-player">
-            <span class="icon">🪖</span>
+            <span class="icon">🏂</span>
             <span id="score1">0</span>
         </div>
         <div class="score-player">
-            <span class="icon">🧢</span>
+            <span class="icon">⛷️</span>
             <span id="score2">0</span>
         </div>
     </div>
     <div id="menu">
-        <button id="pvpBtn">BATTLE: 2 PLAYERS</button>
-        <button id="aiBtn">BATTLE: VS BOT</button>
+        <button id="pvpBtn">2 PLAYERS</button>
+        <button id="aiBtn">VS AI</button>
     </div>
     <canvas id="pongCanvas" style="display:none"></canvas>
-    <div id="planetPopup" style="display:none">
-        <div id="planetGraphic"></div>
-        <div id="planetLabel"></div>
-        <div id="gravityLabel"></div>
-    </div>
-    <div id="spinningIndicator" style="display:none">🚨 MISSION: GRAVITY SPIN 🚨</div>
+    <div id="spinningIndicator" style="display:none">GRAVITY EVENT</div>
     <div id="winner" style="display:none">
         <span id="winnerText"></span><br>
         <button id="restartBtn">REPLAY</button>
