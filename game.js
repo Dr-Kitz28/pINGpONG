@@ -10,8 +10,7 @@ const EXOPLANETS = [
     { name: "LHS 1140b", emoji: "🟤", gravity: 12.5 },
     { name: "K2-18b", emoji: "🟩", gravity: 13.8 },
     { name: "HD 40307g", emoji: "🟠", gravity: 14.7 },
-    { name: "55 Cancri e", emoji: "🔵", gravity: 14.2 },
-    // Add more as needed (all <= 15m/s^2)
+    { name: "55 Cancri e", emoji: "🔵", gravity: 14.2 }
 ];
 
 const WIN_SCORE = 10;
@@ -50,7 +49,10 @@ let mode = null;
 let running = false, mousePos = {x:0, y:0};
 let keys = {};
 let lastTime = null;
-let justBounced1 = false, justBounced2 = false;
+
+// "lastPaddleHit" system for dynamic, realistic bounce
+let lastPaddleHit = null;
+let lastBounceTime = 0;
 
 // === RESPONSIVE BOARD ===
 function setBoardSize() {
@@ -66,8 +68,8 @@ window.addEventListener('resize', setBoardSize);
 
 function resetGameVars() {
     setBoardSize();
-    player1 = {x: PLAYER_X_RANGE[0]+14, y: BOARD_H/2-PADDLE_H/2, color: "#0af"};
-    player2 = {x: AI_X_RANGE[1]-14, y: BOARD_H/2-PADDLE_H/2, color: "#fa0"};
+    player1 = {x: PLAYER_X_RANGE[0]+14, y: BOARD_H/2-PADDLE_H/2, color: "#0af", lastX: 0, lastY: 0, vx: 0, vy: 0};
+    player2 = {x: AI_X_RANGE[1]-14, y: BOARD_H/2-PADDLE_H/2, color: "#fa0", lastX: 0, lastY: 0, vx: 0, vy: 0};
     player1Score = 0; player2Score = 0;
     obstacles = [];
     obstacleTimer = 0;
@@ -75,8 +77,8 @@ function resetGameVars() {
     gravityVec = {x:0, y:0};
     gravityTimeout = null; spinTimeout = null; planet = null;
     lastSpinStart = 0;
-    justBounced1 = false;
-    justBounced2 = false;
+    lastPaddleHit = null;
+    lastBounceTime = 0;
     resetBall(Math.random()>0.5?1:-1);
 }
 
@@ -125,14 +127,12 @@ function drawPaddle(p, leftSide) {
     let r = 74;
     let startAng, endAng, ccw;
     if (leftSide) {
-        // Left paddle: arc from 225° to 135°, concave faces right, draw counterclockwise
-        startAng = (5 * Math.PI) / 4; // 225°
-        endAng = (3 * Math.PI) / 4;   // 135°
+        startAng = (5 * Math.PI) / 4;
+        endAng = (3 * Math.PI) / 4;
         ccw = true;
     } else {
-        // Right paddle: arc from -45° to 45°, concave faces left, draw clockwise
-        startAng = -Math.PI / 4;      // -45°
-        endAng = Math.PI / 4;         // 45°
+        startAng = -Math.PI / 4;
+        endAng = Math.PI / 4;
         ccw = false;
     }
     ctx.beginPath();
@@ -149,7 +149,6 @@ function drawObstacles() {
     for (const ob of obstacles) {
         ctx.save();
         ctx.translate(ob.x+BLOCK_SIZE/2, ob.y+BLOCK_SIZE/2);
-        // Animate pulse
         let pulse = 1 + 0.09*Math.sin(performance.now()/230 + ob.x+ob.y);
         ctx.scale(pulse, pulse);
         ctx.beginPath();
@@ -223,7 +222,6 @@ function drawScore(){
     ctx.fillStyle = "#fff";
     ctx.fillText(player1Score, BOARD_W/2 - 78, 54);
     ctx.fillText(player2Score, BOARD_W/2 + 54, 54);
-    // Floating glass scoreboard
     score1El.textContent = player1Score;
     score2El.textContent = player2Score;
 }
@@ -271,11 +269,25 @@ function resetBall(dir) {
         stuck: false,
         stuckTimer: 0
     };
-    justBounced1 = false;
-    justBounced2 = false;
+    lastPaddleHit = null;
+    lastBounceTime = 0;
 }
 
 function updatePaddles(dt) {
+    // Track paddle velocities for dynamic reflection
+    if (player1) {
+        player1.vx = player1.x - (player1.lastX || player1.x);
+        player1.vy = player1.y - (player1.lastY || player1.y);
+        player1.lastX = player1.x;
+        player1.lastY = player1.y;
+    }
+    if (player2) {
+        player2.vx = player2.x - (player2.lastX || player2.x);
+        player2.vy = player2.y - (player2.lastY || player2.y);
+        player2.lastX = player2.x;
+        player2.lastY = player2.y;
+    }
+
     if (mode==='ai') {
         player1.x = clamp(mousePos.x, PLAYER_X_RANGE[0], PLAYER_X_RANGE[1]);
         player1.y = clamp(mousePos.y, Y_RANGE[0], Y_RANGE[1]);
@@ -305,7 +317,7 @@ function clamp(val, min, max) {
     return Math.max(min, Math.min(max, val));
 }
 
-// Sticky bug fix: Only allow bounce if not justBounced
+// --- Dynamic, realistic bounce: paddle hit detection ---
 function checkPaddleHit(p, leftSide) {
     let px = ball.x - (p.x + PADDLE_W/2);
     let py = ball.y - (p.y + PADDLE_H/2);
@@ -331,7 +343,8 @@ function checkPaddleHit(p, leftSide) {
     return false;
 }
 
-function applyPaddleBounce(p, leftSide) {
+function dynamicPaddleBounce(p, leftSide) {
+    // Use paddle velocity and hit position to give dynamic effect
     let px = ball.x - (p.x + PADDLE_W/2);
     let py = ball.y - (p.y + PADDLE_H/2);
     let normalAngle = Math.atan2(py, px);
@@ -340,34 +353,47 @@ function applyPaddleBounce(p, leftSide) {
         if (normalAngle < 0) normalAngle += Math.PI*2;
         let startA = (5*Math.PI)/4, endA = (3*Math.PI)/4;
         if (startA < endA) {
-            if (!(normalAngle >= startA || normalAngle <= endA)) {
-                normalAngle = (normalAngle < Math.PI) ? endA : startA;
-            }
+            if (!(normalAngle >= startA || normalAngle <= endA)) normalAngle = (normalAngle < Math.PI) ? endA : startA;
         } else {
-            if (!(normalAngle >= startA && normalAngle <= Math.PI*2 || normalAngle >= 0 && normalAngle <= endA)) {
+            if (!(normalAngle >= startA && normalAngle <= Math.PI*2 || normalAngle >= 0 && normalAngle <= endA))
                 normalAngle = (Math.abs(normalAngle-startA) < Math.abs(normalAngle-endA)) ? startA : endA;
-            }
         }
     } else {
         if (normalAngle < -Math.PI/4) normalAngle = -Math.PI/4;
         if (normalAngle > Math.PI/4) normalAngle = Math.PI/4;
     }
+    // Ball normal
     let v = { x: ball.vx, y: ball.vy };
     let n = { x: Math.cos(normalAngle), y: Math.sin(normalAngle) };
     let dot = v.x*n.x + v.y*n.y;
-    ball.vx = v.x - 2*dot*n.x;
-    ball.vy = v.y - 2*dot*n.y;
+
+    // Add paddle velocity to reflection for "dynamic" effect
+    let pvx = p.vx || 0, pvy = p.vy || 0;
+    // If paddle is moving into the ball, give extra speed
+    let paddleImpact = pvx * n.x + pvy * n.y;
+    let reflectFactor = 1.09 + Math.max(0, paddleImpact * 0.15); // dynamic, up to +~30%
+
+    ball.vx = reflectFactor * (v.x - 2*dot*n.x) + 0.55*pvx;
+    ball.vy = reflectFactor * (v.y - 2*dot*n.y) + 0.55*pvy;
+
+    // Add some randomness/spin
     ball.vy += (Math.random()-0.5)*2;
+
+    // Clamp speed, but always a bit above min
     let speed = Math.sqrt(ball.vx*ball.vx + ball.vy*ball.vy);
-    let minSpeed = 7, maxSpeed = 15;
+    let minSpeed = 7, maxSpeed = 18;
     speed = Math.max(Math.min(speed, maxSpeed), minSpeed);
     let theta = Math.atan2(ball.vy, ball.vx);
     ball.vx = speed * Math.cos(theta);
     ball.vy = speed * Math.sin(theta);
+
+    // Make sure it's away from paddle
     if ((leftSide && ball.vx < 0) || (!leftSide && ball.vx > 0))
         ball.vx *= -1;
-    if (leftSide) justBounced1 = true;
-    else justBounced2 = true;
+
+    // Record hit
+    lastPaddleHit = leftSide ? "left" : "right";
+    lastBounceTime = performance.now();
 }
 
 function checkBlockHit(ob) {
@@ -513,22 +539,29 @@ function gameLoop(ts) {
         ball.vy *= -1;
     }
 
-    // Sticky bug fix: Only allow bounce if not justBounced
+    // --- Dynamic sticky bug fix: Only bounce once per approach, but allow re-bounce if ball is moving away and returns
+    let timeNow = performance.now();
     if (checkPaddleHit(player1,true)) {
-        if (!justBounced1) {
-            ball.x = player1.x+PADDLE_W+BALL_RADIUS;
-            applyPaddleBounce(player1, true);
+        // If last hit was not left, or ball is moving away, allow new bounce
+        if (lastPaddleHit !== "left" || (ball.vx < 0 && ball.x > player1.x+PADDLE_W+BALL_RADIUS+5)) {
+            if (ball.vx < 0) { // Only bounce if moving toward paddle
+                ball.x = player1.x+PADDLE_W+BALL_RADIUS;
+                dynamicPaddleBounce(player1, true);
+            }
         }
-    } else {
-        justBounced1 = false;
+    } else if (lastPaddleHit === "left" && (timeNow - lastBounceTime > 70)) {
+        lastPaddleHit = null;
     }
+
     if (checkPaddleHit(player2,false)) {
-        if (!justBounced2) {
-            ball.x = player2.x-BALL_RADIUS;
-            applyPaddleBounce(player2, false);
+        if (lastPaddleHit !== "right" || (ball.vx > 0 && ball.x < player2.x-BALL_RADIUS-5)) {
+            if (ball.vx > 0) {
+                ball.x = player2.x-BALL_RADIUS;
+                dynamicPaddleBounce(player2, false);
+            }
         }
-    } else {
-        justBounced2 = false;
+    } else if (lastPaddleHit === "right" && (timeNow - lastBounceTime > 70)) {
+        lastPaddleHit = null;
     }
 
     for (const ob of obstacles) {
