@@ -1,4 +1,6 @@
-// === EXOPLANET LIST: Sample, gravity <= 15m/s^2 ===
+// === Alto's Adventure "pINGpONG" ===
+
+// EXOPLANETS (unchanged)
 const EXOPLANETS = [
     { name: "Earth", emoji: "🌍", gravity: 9.8 },
     { name: "Mars", emoji: "🪐", gravity: 3.7 },
@@ -49,8 +51,9 @@ let mode = null;
 let running = false, mousePos = {x:0, y:0};
 let keys = {};
 let lastTime = null;
-
 let lastPaddleBounce = null;
+
+let dayNightProgress = 0; // 0..1, day to night, advances slowly
 
 // === RESPONSIVE BOARD ===
 function setBoardSize() {
@@ -66,8 +69,8 @@ window.addEventListener('resize', setBoardSize);
 
 function resetGameVars() {
     setBoardSize();
-    player1 = {x: PLAYER_X_RANGE[0]+14, y: BOARD_H/2-PADDLE_H/2, color: "#0af", lastX: 0, lastY: 0, vx: 0, vy: 0};
-    player2 = {x: AI_X_RANGE[1]-14, y: BOARD_H/2-PADDLE_H/2, color: "#fa0", lastX: 0, lastY: 0, vx: 0, vy: 0};
+    player1 = {x: PLAYER_X_RANGE[0]+14, y: BOARD_H/2-PADDLE_H/2, color: "#7dcfff", lastX: 0, lastY: 0, vx: 0, vy: 0};
+    player2 = {x: AI_X_RANGE[1]-14, y: BOARD_H/2-PADDLE_H/2, color: "#ffd47d", lastX: 0, lastY: 0, vx: 0, vy: 0};
     player1Score = 0; player2Score = 0;
     obstacles = [];
     obstacleTimer = 0;
@@ -117,6 +120,109 @@ restartBtn.onclick = () => {
 aiBtn.onclick = () => startGame('ai');
 pvpBtn.onclick = () => startGame('pvp');
 
+//
+// ==== ALTO'S ADVENTURE BACKGROUND ====
+//
+
+function lerpColor(a, b, t) {
+    // a, b: [r,g,b] arrays, t: 0..1
+    return [
+        Math.round(a[0] + (b[0] - a[0]) * t),
+        Math.round(a[1] + (b[1] - a[1]) * t),
+        Math.round(a[2] + (b[2] - a[2]) * t)
+    ];
+}
+function rgb(c) { return `rgb(${c[0]},${c[1]},${c[2]})`; }
+
+// Palette: [dawn, day, dusk, night], each is [r,g,b]
+const SKIES = [
+    [ [155,191,230], [245,224,196], [255,151,113], [51,49,89] ], // Top
+    [ [204,223,238], [176,222,255], [136,110,176], [22,27,46] ], // Middle
+    [ [233,234,209], [124,190,202], [ 66,80,82 ], [13,25,35] ]   // Bottom
+];
+const SUN_COLOR = [255,220,120];
+const MOON_COLOR = [230,230,255];
+
+function drawAltoBackground(progress) {
+    // progress: 0..1 (0 = dawn, 0.25 = day, 0.5 = dusk, 0.75 = night)
+    // Compute time between 4 keyframes
+    let p = (progress % 1 + 1) % 1;
+    let k = Math.floor(p * 4);
+    let t = (p * 4) % 1;
+    // Get gradient colors
+    let top = lerpColor(SKIES[0][k], SKIES[0][(k+1)%4], t);
+    let mid = lerpColor(SKIES[1][k], SKIES[1][(k+1)%4], t);
+    let bot = lerpColor(SKIES[2][k], SKIES[2][(k+1)%4], t);
+
+    // Sky gradient
+    let grad = ctx.createLinearGradient(0, 0, 0, BOARD_H);
+    grad.addColorStop(0, rgb(top));
+    grad.addColorStop(0.5, rgb(mid));
+    grad.addColorStop(1, rgb(bot));
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, BOARD_W, BOARD_H);
+
+    // Parallax mountain layers (darker further)
+    drawMountains(BOARD_H, 0.18, 0.15, 32, [80, 105, 142], 0.9, progress * 0.5, 1.0);
+    drawMountains(BOARD_H, 0.32, 0.22, 36, [65, 79, 101], 0.92, progress, 0.5);
+    drawMountains(BOARD_H, 0.45, 0.33, 40, [39, 52, 77], 0.88, progress*1.5, 0.25);
+
+    // Sun or moon
+    let sunMoonT = (progress + 0.04) % 1; // Offset sun so it's not exactly dawn at 0
+    let theta = Math.PI * (1 - sunMoonT); // 0=left, 1=right, pi=top
+    let cx = BOARD_W/2 + Math.cos(theta)*BOARD_W*0.36;
+    let cy = BOARD_H*0.21 - Math.sin(theta)*BOARD_H*0.18;
+    let isNight = (k === 3 || (k === 0 && t < 0.2)); // mostly night
+    ctx.save();
+    ctx.globalAlpha = 0.80;
+    ctx.beginPath();
+    ctx.arc(cx, cy, isNight ? 40 : 63, 0, Math.PI*2);
+    ctx.fillStyle = isNight ? rgb(MOON_COLOR) : rgb(SUN_COLOR);
+    ctx.shadowColor = isNight ? "#ccd7ff77" : "#ffeab077";
+    ctx.shadowBlur = isNight ? 26 : 48;
+    ctx.fill();
+    ctx.restore();
+    if (isNight) drawStars(ctx, BOARD_W, BOARD_H, 0.15);
+}
+function drawStars(ctx, w, h, alpha=1) {
+    ctx.save();
+    ctx.globalAlpha = 0.25*alpha;
+    for (let i=0; i<60; ++i) {
+        let sx = Math.random()*w;
+        let sy = Math.random()*h*0.7;
+        let r = Math.random()*1.4+0.5;
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, Math.PI*2);
+        ctx.fillStyle = "#fff";
+        ctx.fill();
+    }
+    ctx.restore();
+}
+function drawMountains(h, topFrac, baseFrac, detail, color, alpha, xshift, parallax) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    let y0 = h*topFrac;
+    let y1 = h*baseFrac;
+    let w = BOARD_W;
+    ctx.moveTo(0, h);
+    for (let i = 0; i <= detail; ++i) {
+        let t = i / detail;
+        let px = t*w;
+        let base = y0 + (y1-y0)*Math.pow(Math.sin(Math.PI*t), 3);
+        let noise =
+            Math.sin(xshift*5 + i*0.6 + Math.cos(xshift*2+t*6)*1.2) * 12 +
+            Math.sin(xshift*2.2 + i*1.5) * 18 * (0.5-Math.abs(t-0.5));
+        ctx.lineTo(px, base + noise*parallax);
+    }
+    ctx.lineTo(w, h);
+    ctx.closePath();
+    ctx.fillStyle = rgb(color);
+    ctx.fill();
+    ctx.restore();
+}
+
+// === DRAWING ===
 function drawPaddle(p, leftSide) {
     ctx.save();
     ctx.translate(p.x + PADDLE_W/2, p.y + PADDLE_H/2);
@@ -136,7 +242,13 @@ function drawPaddle(p, leftSide) {
     ctx.lineWidth = PADDLE_W;
     ctx.strokeStyle = p.color;
     ctx.shadowColor = p.color;
-    ctx.shadowBlur = 8;
+    ctx.shadowBlur = 18;
+    ctx.globalAlpha = 0.33;
+    ctx.stroke();
+    ctx.globalAlpha = 1.0;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#fff6";
+    ctx.shadowBlur = 0;
     ctx.stroke();
     ctx.restore();
 }
@@ -150,18 +262,19 @@ function drawObstacles() {
         ctx.beginPath();
         ctx.rect(-BLOCK_SIZE/2, -BLOCK_SIZE/2, BLOCK_SIZE, BLOCK_SIZE);
         ctx.fillStyle = getBlockColor(ob.type);
-        ctx.globalAlpha = 0.88;
+        ctx.globalAlpha = 0.19;
         ctx.shadowColor = getBlockColor(ob.type);
-        ctx.shadowBlur = 16;
+        ctx.shadowBlur = 18;
         ctx.fill();
         ctx.globalAlpha = 1;
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 2;
         ctx.shadowBlur = 0;
         ctx.strokeStyle = "#fff";
         ctx.stroke();
         ctx.font = "28px serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
+        ctx.globalAlpha = 0.7;
         ctx.fillStyle = "#fff";
         ctx.fillText(getBlockIcon(ob.type), 0, 2);
         ctx.restore();
@@ -170,12 +283,12 @@ function drawObstacles() {
 
 function getBlockColor(type) {
     switch(type) {
-        case 'glass': return "#4fd3ff";
-        case 'stone': return "#bbb";
-        case 'nether': return "#920";
-        case 'creeper': return "#3c5";
-        case 'gravity': return "#ffb300";
-        default: return "#888";
+        case 'glass': return "#bfe7ed";
+        case 'stone': return "#aaa";
+        case 'nether': return "#927bb6";
+        case 'creeper': return "#69cbb3";
+        case 'gravity': return "#fbc97a";
+        default: return "#ddd";
     }
 }
 function getBlockIcon(type){
@@ -193,16 +306,22 @@ function drawBall() {
     ctx.save();
     ctx.beginPath();
     ctx.arc(ball.x, ball.y, BALL_RADIUS, 0, Math.PI*2);
+    ctx.globalAlpha = 0.86;
     ctx.fillStyle = "#fff";
-    ctx.shadowColor = spinning ? "#ff0" : "#0af";
-    ctx.shadowBlur = spinning ? 16 : 8;
+    ctx.shadowColor = spinning ? "#ffeab0" : "#7dcfff";
+    ctx.shadowBlur = spinning ? 44 : 24;
     ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = "#fff8";
+    ctx.shadowBlur = 0;
+    ctx.stroke();
     ctx.restore();
 }
 
 function drawCenterLine(){
     ctx.save();
-    ctx.strokeStyle = "#fff8";
+    ctx.strokeStyle = "#fff2";
     ctx.setLineDash([18, 12]);
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -214,10 +333,13 @@ function drawCenterLine(){
 }
 
 function drawScore(){
+    ctx.save();
     ctx.font = "38px 'Minecraftia', Arial, monospace";
     ctx.fillStyle = "#fff";
+    ctx.globalAlpha = 0.8;
     ctx.fillText(player1Score, BOARD_W/2 - 78, 54);
     ctx.fillText(player2Score, BOARD_W/2 + 54, 54);
+    ctx.restore();
     score1El.textContent = player1Score;
     score2El.textContent = player2Score;
 }
@@ -226,9 +348,9 @@ function drawSpinningBorder(){
     ctx.save();
     ctx.translate(BOARD_W/2, BOARD_H/2);
     ctx.rotate(spinAngle);
-    ctx.strokeStyle = "#ff0";
+    ctx.strokeStyle = "#ffeab0";
     ctx.lineWidth = 10;
-    ctx.globalAlpha = 0.5 + 0.5*Math.abs(Math.sin(performance.now()/250));
+    ctx.globalAlpha = 0.23 + 0.18*Math.abs(Math.sin(performance.now()/250));
     ctx.beginPath();
     ctx.rect(-BOARD_W/2+6,-BOARD_H/2+6, BOARD_W-12, BOARD_H-12);
     ctx.stroke();
@@ -236,7 +358,8 @@ function drawSpinningBorder(){
 }
 
 function draw() {
-    ctx.clearRect(0, 0, BOARD_W, BOARD_H);
+    // Alto's Adventure calm background
+    drawAltoBackground(dayNightProgress);
 
     ctx.save();
     ctx.translate(BOARD_W/2, BOARD_H/2);
@@ -282,26 +405,28 @@ function updatePaddles(dt) {
         player2.lastY = player2.y;
     }
 
+    // Reduce paddle speed for calmness
+    const paddleSpeed = 4.2;
     if (mode==='ai') {
         player1.x = clamp(mousePos.x, PLAYER_X_RANGE[0], PLAYER_X_RANGE[1]);
         player1.y = clamp(mousePos.y, Y_RANGE[0], Y_RANGE[1]);
         let targetY = ball.y - PADDLE_H/2;
         let targetX = clamp(ball.x, AI_X_RANGE[0], AI_X_RANGE[1]);
-        player2.y += clamp(targetY - player2.y, -6, 6);
+        player2.y += clamp(targetY - player2.y, -paddleSpeed, paddleSpeed);
         player2.y = clamp(player2.y, Y_RANGE[0], Y_RANGE[1]);
-        player2.x += clamp(targetX - player2.x, -4, 4);
+        player2.x += clamp(targetX - player2.x, -paddleSpeed, paddleSpeed);
         player2.x = clamp(player2.x, AI_X_RANGE[0], AI_X_RANGE[1]);
     } else {
-        if (keys['w']) player1.y -= 8;
-        if (keys['s']) player1.y += 8;
-        if (keys['a']) player1.x -= 8;
-        if (keys['d']) player1.x += 8;
+        if (keys['w']) player1.y -= paddleSpeed;
+        if (keys['s']) player1.y += paddleSpeed;
+        if (keys['a']) player1.x -= paddleSpeed;
+        if (keys['d']) player1.x += paddleSpeed;
         player1.x = clamp(player1.x, PLAYER_X_RANGE[0], PLAYER_X_RANGE[1]);
         player1.y = clamp(player1.y, Y_RANGE[0], Y_RANGE[1]);
-        if (keys['arrowup']) player2.y -= 8;
-        if (keys['arrowdown']) player2.y += 8;
-        if (keys['arrowleft']) player2.x -= 8;
-        if (keys['arrowright']) player2.x += 8;
+        if (keys['arrowup']) player2.y -= paddleSpeed;
+        if (keys['arrowdown']) player2.y += paddleSpeed;
+        if (keys['arrowleft']) player2.x -= paddleSpeed;
+        if (keys['arrowright']) player2.x += paddleSpeed;
         player2.x = clamp(player2.x, AI_X_RANGE[0], AI_X_RANGE[1]);
         player2.y = clamp(player2.y, Y_RANGE[0], Y_RANGE[1]);
     }
@@ -355,26 +480,21 @@ function dynamicPaddleBounce(p, leftSide) {
         if (normalAngle < -Math.PI/4) normalAngle = -Math.PI/4;
         if (normalAngle > Math.PI/4) normalAngle = Math.PI/4;
     }
-    // Ball normal
     let v = { x: ball.vx, y: ball.vy };
     let n = { x: Math.cos(normalAngle), y: Math.sin(normalAngle) };
     let dot = v.x*n.x + v.y*n.y;
-
-    // Dynamic effect: true paddle velocity, so use frame-to-frame (pixels/frame)
     let pvx = p.vx || 0, pvy = p.vy || 0;
     let paddleImpact = pvx * n.x + pvy * n.y;
-
-    // The intensity is now closely tied to the actual paddle movement toward the ball
-    let baseReflect = 1.12 + Math.max(0, paddleImpact * 0.23); // Stronger impact for higher paddle speed
-    ball.vx = baseReflect * (v.x - 2*dot*n.x) + 0.7*pvx;
-    ball.vy = baseReflect * (v.y - 2*dot*n.y) + 0.7*pvy;
+    let baseReflect = 1.08 + Math.max(0, paddleImpact * 0.38); // Stronger impact for higher paddle speed, more Alto-like
+    ball.vx = baseReflect * (v.x - 2*dot*n.x) + 0.45*pvx;
+    ball.vy = baseReflect * (v.y - 2*dot*n.y) + 0.45*pvy;
 
     // Add some randomness/spin for realism
-    ball.vy += (Math.random()-0.5)*2.5;
+    ball.vy += (Math.random()-0.5)*1.4;
 
-    // Clamp speed, but allow higher speeds (for realism)
+    // Clamp speed for Alto calmness
     let speed = Math.sqrt(ball.vx*ball.vx + ball.vy*ball.vy);
-    let minSpeed = 7, maxSpeed = 28;
+    let minSpeed = 5.4, maxSpeed = 16;
     speed = Math.max(Math.min(speed, maxSpeed), minSpeed);
     let theta = Math.atan2(ball.vy, ball.vx);
     ball.vx = speed * Math.cos(theta);
@@ -383,10 +503,12 @@ function dynamicPaddleBounce(p, leftSide) {
     // Always away from paddle
     if ((leftSide && ball.vx < 0) || (!leftSide && ball.vx > 0)) ball.vx *= -1;
 
-    // Move ball out of paddle surface to prevent sticking visually
-    let pushDist = 4;
-    ball.x += Math.cos(normalAngle) * pushDist * (leftSide ? 1 : -1);
-    ball.y += Math.sin(normalAngle) * pushDist * (leftSide ? 1 : -1);
+    // Move ball fully out of paddle arc
+    let arcCenterX = p.x + PADDLE_W/2;
+    let arcCenterY = p.y + PADDLE_H/2;
+    let outRad = 74 + PADDLE_W/2 + BALL_RADIUS + 1.4;
+    ball.x = arcCenterX + Math.cos(normalAngle) * outRad;
+    ball.y = arcCenterY + Math.sin(normalAngle) * outRad;
 
     lastPaddleBounce = leftSide ? "left" : "right";
 }
@@ -515,6 +637,10 @@ function gameLoop(ts) {
     let dt = ts-lastTime;
     lastTime = ts;
 
+    // Day/Night progress (cycles every 180 seconds)
+    dayNightProgress += dt/(1000*180);
+    if (dayNightProgress > 1) dayNightProgress -= 1;
+
     updatePaddles(dt);
 
     if (!ball.stuck) {
@@ -534,7 +660,6 @@ function gameLoop(ts) {
         ball.vy *= -1;
     }
 
-    // Dynamic bounce and anti-sticking: only bounce if moving toward paddle, and always move ball out after a bounce
     if (checkPaddleHit(player1,true)) {
         if (ball.vx < 0 && lastPaddleBounce !== "left") {
             dynamicPaddleBounce(player1, true);
